@@ -13,7 +13,7 @@
 //
 // Flash-indeling (overeenstemmend met origineel U-Boot):
 //   0x000000 - 0x01ffff  u-boot      (128KB)
-//   0x020000 - 0xfdfff   firmware    (15.75MB — kernel + rootfs)
+//   0x020000 - 0xfdffff  firmware    (16.125MB — kernel + rootfs)
 //   0xfe0000 - 0xfeffff  fon_data    (64KB)
 //   0xff0000 - 0xffffff  art         (64KB, WiFi-kalibratie)
 //

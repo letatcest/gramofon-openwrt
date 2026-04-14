@@ -79,8 +79,9 @@ jobs:
         working-directory: openwrt
         run: |
           make -j$(nproc) V=s 2>&1 | tee /tmp/build.log
-          echo "Exit code: ${PIPESTATUS[0]}"
-          [ ${PIPESTATUS[0]} -eq 0 ] || { tail -100 /tmp/build.log; exit 1; }
+          MAKE_EXIT=${PIPESTATUS[0]}
+          echo "Make exit code: $MAKE_EXIT"
+          [ $MAKE_EXIT -eq 0 ] || { echo "=== Build mislukt — laatste 100 regels ==="; tail -100 /tmp/build.log; exit 1; }
 
       - name: Buildlog uploaden (altijd)
         if: always()

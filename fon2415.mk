@@ -7,7 +7,7 @@ define Device/fon_fon2415
   DEVICE_VARIANT := (Gramofon)
   DEVICE_DTS := qca9341_fon_fon2415
   DEVICE_DTS_DIR := ../dts
-  IMAGE_SIZE := 15744k
+  IMAGE_SIZE := 16128k
   KERNEL_SIZE := 2048k
   IMAGES := sysupgrade.bin factory.bin
   IMAGE/sysupgrade.bin := append-kernel | append-rootfs | pad-rootfs | check-size | append-metadata
