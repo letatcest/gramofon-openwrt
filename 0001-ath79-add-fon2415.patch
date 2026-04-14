@@ -1,0 +1,56 @@
+From: Krijn Soeteman <krijn@ksoeteman.nl>
+Date: Tue, 15 Apr 2026 00:00:00 +0200
+Subject: [PATCH] ath79: add support for Fon Fonera Hub FON2415 (Gramofon)
+
+Voegt ondersteuning toe voor de Fon FON2415 (ook: FON2515A02 / Gramofon),
+een cloud-muziekstreamer gebaseerd op de Atheros AR9341 SoC.
+
+Hardware:
+  - Atheros AR9341 @ 535MHz
+  - 64MB DDR2 RAM
+  - 16MB SPI NOR flash (MXIC MX25L128)
+  - 2.4GHz WiFi (geïntegreerd)
+  - 2x Ethernet via Bi-TEK FM-1024LLF switch
+  - AKM AK4430ET audio DAC (toekomstig: I2S)
+  - UART: J2 header 115200 8N1
+
+Flash-indeling:
+  0x000000 u-boot    128KB
+  0x020000 firmware  15.75MB
+  0xfe0000 fon_data  64KB
+  0xff0000 art       64KB (WiFi-kalibratie)
+
+---
+ target/linux/ath79/dts/qca9341_fon_fon2415.dts | 1 +
+ target/linux/ath79/image/generic.mk             | 1 +
+---
+
+diff --git a/target/linux/ath79/dts/qca9341_fon_fon2415.dts b/target/linux/ath79/dts/qca9341_fon_fon2415.dts
+new file mode 120000
+index 0000000000..1111111111
+--- /dev/null
++++ b/target/linux/ath79/dts/qca9341_fon_fon2415.dts
+@@ -0,0 +1 @@
++[inhoud van fon2415.dts — zie apart bestand]
+
+diff --git a/target/linux/ath79/image/generic.mk b/target/linux/ath79/image/generic.mk
+index 0000000000..1111111111 100644
+--- a/target/linux/ath79/image/generic.mk
++++ b/target/linux/ath79/image/generic.mk
+@@ -<zoek naar een logische plek, bijv. na andere FON-entries> @@
++
++define Device/fon_fon2415
++  SOC := ar9341
++  DEVICE_VENDOR := Fon
++  DEVICE_MODEL := Fonera Hub FON2415
++  DEVICE_VARIANT := (Gramofon)
++  DEVICE_DTS := qca9341_fon_fon2415
++  DEVICE_DTS_DIR := ../dts
++  IMAGE_SIZE := 15744k
++  KERNEL_SIZE := 2048k
++  IMAGES := sysupgrade.bin factory.bin
++  IMAGE/sysupgrade.bin := append-kernel | append-rootfs | pad-rootfs | check-size | append-metadata
++  IMAGE/factory.bin    := append-kernel | append-rootfs | pad-rootfs | check-size
++  DEVICE_PACKAGES := kmod-ath9k
++endef
++TARGET_DEVICES += fon_fon2415
