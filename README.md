@@ -1,6 +1,6 @@
 # OpenWrt voor Fon Fonera Hub FON2415 (Gramofon)
 
-![Build Status](https://github.com/Scientias-news/gramofon-openwrt/actions/workflows/build.yml/badge.svg)
+![Build Status](https://github.com/letatcest/gramofon-openwrt/actions/workflows/build.yml/badge.svg)
 
 OpenWrt-port voor de **Fon Fonera Hub FON2415**, ook bekend als de **Gramofon** — een cloud-muziekstreamer waarvan de originele cloud-infrastructuur al jaren buiten gebruik is. Dit project geeft het apparaat een nieuw leven als zelfstandige audiospeler.
 
@@ -28,7 +28,7 @@ OpenWrt-port voor de **Fon Fonera Hub FON2415**, ook bekend als de **Gramofon** 
 
 ## Image downloaden
 
-Ga naar [Actions](https://github.com/Scientias-news/gramofon-openwrt/actions), klik op de laatste succesvolle build, en download het artifact `fon2415-openwrt-image`.
+Ga naar [Actions](https://github.com/letatcest/gramofon-openwrt/actions), klik op de laatste succesvolle build, en download het artifact `fon2415-openwrt-image`.
 
 ## Flashen via U-Boot (UART)
 
@@ -60,7 +60,7 @@ Na herstart: http://192.168.1.1 — LuCI webinterface, wachtwoord leeg.
 ## Lokaal bouwen
 
 ```bash
-git clone https://github.com/Scientias-news/gramofon-openwrt
+git clone https://github.com/letatcest/gramofon-openwrt
 cd gramofon-openwrt
 chmod +x build_openwrt.sh
 ./build_openwrt.sh
