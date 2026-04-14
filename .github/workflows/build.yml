@@ -5,9 +5,10 @@ on:
     branches: [ main ]
     paths:
       - 'fon2415.dts'
+      - 'fon2415.mk'
       - 'build_openwrt.sh'
       - '.github/workflows/build.yml'
-  workflow_dispatch:   # ook handmatig te starten via Actions-tab
+  workflow_dispatch:
 
 jobs:
   build:
@@ -32,31 +33,10 @@ jobs:
           git clone --depth 1 --branch v23.05.3 \
             https://git.openwrt.org/openwrt/openwrt.git openwrt
 
-      - name: DTS-bestand kopiëren
+      - name: DTS en device-profiel kopiëren
         run: |
           cp fon2415.dts openwrt/target/linux/ath79/dts/qca9341_fon_fon2415.dts
-
-      - name: Device-profiel toevoegen aan generic.mk
-        run: |
-          cat >> openwrt/target/linux/ath79/image/generic.mk << 'EOF'
-
-# Fon Fonera Hub FON2415 (Gramofon)
-define Device/fon_fon2415
-  SOC := ar9341
-  DEVICE_VENDOR := Fon
-  DEVICE_MODEL := Fonera Hub FON2415
-  DEVICE_VARIANT := (Gramofon)
-  DEVICE_DTS := qca9341_fon_fon2415
-  DEVICE_DTS_DIR := ../dts
-  IMAGE_SIZE := 15744k
-  KERNEL_SIZE := 2048k
-  IMAGES := sysupgrade.bin factory.bin
-  IMAGE/sysupgrade.bin := append-kernel | append-rootfs | pad-rootfs | check-size | append-metadata
-  IMAGE/factory.bin    := append-kernel | append-rootfs | pad-rootfs | check-size
-  DEVICE_PACKAGES := kmod-ath9k
-endef
-TARGET_DEVICES += fon_fon2415
-EOF
+          cat fon2415.mk >> openwrt/target/linux/ath79/image/generic.mk
 
       - name: Feeds bijwerken
         working-directory: openwrt
@@ -67,46 +47,42 @@ EOF
       - name: Build-configuratie aanmaken
         working-directory: openwrt
         run: |
-          # Stap 1: basis target instellen en defconfig uitvoeren
-          # defconfig kent het device nog niet — dat wordt daarna toegevoegd
-          cat > .config << 'EOF'
-CONFIG_TARGET_ath79=y
-CONFIG_TARGET_ath79_generic=y
-CONFIG_TARGET_ROOTFS_SQUASHFS=y
-CONFIG_TARGET_SQUASHFS_BLOCK_SIZE=256
-EOF
+          # Stap 1: basis target, dan defconfig
+          printf 'CONFIG_TARGET_ath79=y\nCONFIG_TARGET_ath79_generic=y\n' > .config
           make defconfig
 
           # Stap 2: device en pakketten toevoegen NA defconfig
-          # (defconfig verwijdert onbekende symbolen; nu zijn ze bekend)
-          echo "CONFIG_TARGET_ath79_generic_DEVICE_fon_fon2415=y" >> .config
-          echo "CONFIG_PACKAGE_kmod-ath9k=y" >> .config
-          echo "CONFIG_PACKAGE_luci=y" >> .config
-          echo "CONFIG_PACKAGE_luci-ssl=y" >> .config
-          echo "CONFIG_PACKAGE_openssh-sftp-server=y" >> .config
+          # (defconfig verwijdert onbekende symbolen; na defconfig zijn ze bekend)
+          printf '%s\n' \
+            'CONFIG_TARGET_ath79_generic_DEVICE_fon_fon2415=y' \
+            'CONFIG_PACKAGE_kmod-ath9k=y' \
+            'CONFIG_PACKAGE_luci=y' \
+            'CONFIG_PACKAGE_luci-ssl=y' \
+            'CONFIG_PACKAGE_openssh-sftp-server=y' \
+            'CONFIG_TARGET_ROOTFS_SQUASHFS=y' \
+            >> .config
 
-          # Stap 3: config opnieuw uitbreiden met de nieuwe symbolen
+          # Stap 3: tweede defconfig om de nieuwe symbolen te expanderen
           make defconfig
 
           # Controleer of het device geselecteerd is
           echo "--- Device selectie in .config ---"
-          grep -i "fon2415\|DEVICE_fon" .config || echo "FOUT: device niet gevonden in .config!"
-          grep "fon2415" .config | grep -v "^#" | grep -c "=y" \
-            && echo "OK: device geselecteerd" \
-            || { echo "FOUT: device niet geselecteerd — build wordt gestopt"; exit 1; }
+          if grep -q 'CONFIG_TARGET_ath79_generic_DEVICE_fon_fon2415=y' .config; then
+            echo "OK: fon_fon2415 geselecteerd"
+          else
+            echo "FOUT: device niet geselecteerd — afbreken"
+            grep fon2415 .config || true
+            exit 1
+          fi
 
       - name: Image bouwen
         working-directory: openwrt
         run: |
-          # Volledig log opslaan én live meekijken (tail toont laatste 100 regels bij fout)
-          make -j$(nproc) V=s 2>&1 | tee /tmp/build.log; BUILD_EXIT=${PIPESTATUS[0]}
-          if [ $BUILD_EXIT -ne 0 ]; then
-            echo "=== Build mislukt — laatste 100 regels ==="
-            tail -100 /tmp/build.log
-            exit $BUILD_EXIT
-          fi
+          make -j$(nproc) V=s 2>&1 | tee /tmp/build.log
+          echo "Exit code: ${PIPESTATUS[0]}"
+          [ ${PIPESTATUS[0]} -eq 0 ] || { tail -100 /tmp/build.log; exit 1; }
 
-      - name: Buildlog uploaden (altijd, ook bij fout)
+      - name: Buildlog uploaden (altijd)
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -114,13 +90,12 @@ EOF
           path: /tmp/build.log
           retention-days: 7
 
-      - name: Controleer output
+      - name: Controleer output en kopieer image
         run: |
-          echo "=== Inhoud van bin/targets/ath79/generic/ ==="
+          echo "=== Inhoud bin/targets/ath79/generic/ ==="
           ls -lh openwrt/bin/targets/ath79/generic/
           cp openwrt/bin/targets/ath79/generic/openwrt-ath79-generic-fon_fon2415-squashfs-factory.bin \
              fon2415.image
-          echo "Image grootte:"
           ls -lh fon2415.image
 
       - name: Image uploaden als artifact
