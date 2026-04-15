@@ -75,7 +75,7 @@ Builds against OpenWrt **v24.10.6** (latest stable). Duurt 30–90 minuten bij d
 - [x] DTS-bestand aangemaakt
 - [x] GitHub Actions build pipeline
 - [x] Build geverifieerd succesvol (OpenWrt 24.10.6, kernel 6.6.127)
-- [x] Geflasht en getest — OpenWrt boot, Ethernet werkt, WiFi-interface aanwezig
+- [x] Geflasht en getest — OpenWrt boot, Ethernet werkt, WiFi werkend (AP-modus)
 - [ ] GPIO-nummers voor LED's en resetknop verifiëren
 - [ ] Ethernet PHY-configuratie verifiëren (AR9341 + Atheros S27)
 - [ ] Audio (AK4430ET) werkend
