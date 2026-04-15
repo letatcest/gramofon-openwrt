@@ -40,6 +40,32 @@ jobs:
           cat fon2415.mk >> openwrt/target/linux/ath79/image/generic.mk
           cp -r package/ath79-audio openwrt/package/kernel/ath79-audio
 
+      - name: Patch sound.mk - voeg kmod-sound-soc-simple-card toe
+        run: |
+          cat >> openwrt/package/kernel/linux/modules/sound.mk << 'SOUNDMK_EOF'
+
+
+define KernelPackage/sound-soc-simple-card
+  TITLE:=Simple Audio Card support
+  DEPENDS:=+kmod-sound-soc-core
+  KCONFIG:= \
+	CONFIG_SND_SIMPLE_CARD_UTILS \
+	CONFIG_SND_SIMPLE_CARD
+  FILES:= \
+	$(LINUX_DIR)/sound/soc/generic/snd-soc-simple-card-utils.ko \
+	$(LINUX_DIR)/sound/soc/generic/snd-soc-simple-card.ko
+  AUTOLOAD:=$(call AutoLoad,56,snd-soc-simple-card-utils snd-soc-simple-card)
+  $(call AddDepends/sound)
+endef
+
+define KernelPackage/sound-soc-simple-card/description
+  Simple Audio Card machine driver for device tree simple-audio-card
+  binding. Connects CPU DAI and codec DAI as described in DTS.
+endef
+
+$(eval $(call KernelPackage,sound-soc-simple-card))
+SOUNDMK_EOF
+
       - name: Update feeds
         working-directory: openwrt
         run: |
@@ -67,6 +93,8 @@ jobs:
             'CONFIG_PACKAGE_kmod-sound-core=y' \
             'CONFIG_PACKAGE_kmod-sound-soc-core=y' \
             'CONFIG_PACKAGE_kmod-sound-soc-simple-card=y' \
+            'CONFIG_SND_SIMPLE_CARD=m' \
+            'CONFIG_SND_SIMPLE_CARD_UTILS=m' \
             >> .config
 
           # Step 3: second defconfig to expand the new symbols
