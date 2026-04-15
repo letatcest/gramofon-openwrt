@@ -9,7 +9,7 @@ include $(INCLUDE_DIR)/package.mk
 define KernelPackage/ath79-audio
   SUBMENU:=Sound Support
   TITLE:=AR9341 I2S audio driver (Gramofon / AK4430ET)
-  DEPENDS:=@TARGET_ath79 +kmod-sound-core +kmod-sound-soc-core
+  DEPENDS:=@TARGET_ath79 +kmod-sound-core +kmod-sound-soc-core +kmod-sound-soc-simple-card
   FILES:=$(PKG_BUILD_DIR)/ath79-i2s.ko \
          $(PKG_BUILD_DIR)/ak4430et.ko
   AUTOLOAD:=$(call AutoLoad,40,ath79-i2s ak4430et)

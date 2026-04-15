@@ -66,6 +66,7 @@ jobs:
             'CONFIG_PACKAGE_kmod-ath79-audio=y' \
             'CONFIG_PACKAGE_kmod-sound-core=y' \
             'CONFIG_PACKAGE_kmod-sound-soc-core=y' \
+            'CONFIG_PACKAGE_kmod-sound-soc-simple-card=y' \
             >> .config
 
           # Step 3: second defconfig to expand the new symbols
