@@ -66,7 +66,7 @@ chmod +x build_openwrt.sh
 ./build_openwrt.sh
 ```
 
-Builds against OpenWrt **v23.05.4** (latest stable). Duurt 30–90 minuten bij de eerste keer.
+Builds against OpenWrt **v24.10.6** (latest stable). Duurt 30–90 minuten bij de eerste keer.
 
 ## Status
 
