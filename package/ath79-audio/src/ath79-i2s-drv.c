@@ -51,6 +51,9 @@ void ath79_stereo_reset(struct ath79_i2s_dev *adev)
 	t = stereo_rr(adev, AR934X_STEREO_REG_CONFIG);
 	t |= AR934X_STEREO_CONFIG_RESET;
 	stereo_wr(adev, AR934X_STEREO_REG_CONFIG, t);
+	udelay(10);
+	t &= ~AR934X_STEREO_CONFIG_RESET;
+	stereo_wr(adev, AR934X_STEREO_REG_CONFIG, t);
 	spin_unlock(&adev->stereo_lock);
 }
 
