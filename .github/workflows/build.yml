@@ -78,6 +78,9 @@ jobs:
       - name: Image bouwen
         working-directory: openwrt
         run: |
+          # FD 8 openen: OpenWrt schrijft timing-output naar >&8,
+          # zonder dit geeft bash "Bad file descriptor" en faalt de build.
+          exec 8>/dev/null
           make -j$(nproc) V=s 2>&1 | tee /tmp/build.log
           MAKE_EXIT=${PIPESTATUS[0]}
           echo "Make exit code: $MAKE_EXIT"
