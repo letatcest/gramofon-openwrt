@@ -18,7 +18,7 @@ trap 'echo ""; echo "Build failed — check build.log for details."' ERR
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OPENWRT_DIR="${SCRIPT_DIR}/openwrt"
-OPENWRT_TAG="v23.05.3"
+OPENWRT_TAG="v23.05.4"
 
 echo "=== Gramofon FON2415 — OpenWrt build script ==="
 echo "    OpenWrt version : ${OPENWRT_TAG}"
