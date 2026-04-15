@@ -123,6 +123,12 @@
 
 /* ── Device state ─────────────────────────────────────────────────────── */
 
+/* Per-card platform state — defined before ath79_i2s_dev which embeds it */
+struct ath79_pcm_pltfm_priv {
+	struct snd_pcm_substream *playback;
+	struct snd_pcm_substream *capture;
+};
+
 struct ath79_i2s_dev {
 	struct device		*dev;
 
@@ -196,12 +202,6 @@ struct ath79_pcm_rt_priv {
 	unsigned int		 elapsed_size;
 	unsigned int		 delay_time;
 	int			 direction;
-};
-
-/* Per-card platform state */
-struct ath79_pcm_pltfm_priv {
-	struct snd_pcm_substream *playback;
-	struct snd_pcm_substream *capture;
 };
 
 /* ── Function prototypes ──────────────────────────────────────────────── */
