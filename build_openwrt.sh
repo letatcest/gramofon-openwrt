@@ -14,6 +14,7 @@
 #   fon2415-sysupgrade.bin — sysupgrade image for subsequent updates
 
 set -euo pipefail
+trap 'echo ""; echo "Build failed — check build.log for details."' ERR
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OPENWRT_DIR="${SCRIPT_DIR}/openwrt"
