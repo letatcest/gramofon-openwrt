@@ -156,14 +156,15 @@
 // ── WiFi ───────────────────────────────────────────────────────────────────
 //
 // WiFi calibration data is stored in the ART partition at offset 0x1000.
-// This is the standard Atheros pattern for AR9341.
+// kernel 6.6 (OpenWrt 24.10+): use nvmem-cells instead of mtd-cal-data.
 
 &wmac {
 	status = "okay";
-	mtd-cal-data = <&art 0x1000>;
+	nvmem-cells = <&cal_art>;
+	nvmem-cell-names = "calibration";
 };
 
-// ── MAC address from ART ───────────────────────────────────────────────────
+// ── MAC address and calibration data from ART ─────────────────────────────
 
 &art {
 	nvmem-layout {
@@ -173,6 +174,10 @@
 
 		macaddr_art: macaddr@0 {
 			reg = <0x0 0x6>;
+		};
+
+		cal_art: calibration@1000 {
+			reg = <0x1000 0x440>;
 		};
 	};
 };
