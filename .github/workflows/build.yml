@@ -1,4 +1,4 @@
-name: Build OpenWrt voor Gramofon FON2415
+name: Build OpenWrt for Gramofon FON2415
 
 on:
   push:
@@ -19,7 +19,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Build-afhankelijkheden installeren
+      - name: Install build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -28,31 +28,32 @@ jobs:
             libssl-dev python3-setuptools rsync swig unzip zlib1g-dev \
             file wget
 
-      - name: OpenWrt klonen (v23.05.3)
+      - name: Clone OpenWrt (v23.05.3)
         run: |
           git clone --depth 1 --branch v23.05.3 \
             https://git.openwrt.org/openwrt/openwrt.git openwrt
 
-      - name: DTS en device-profiel kopiëren
+      - name: Copy DTS and device profile
         run: |
           cp fon2415.dts openwrt/target/linux/ath79/dts/qca9341_fon_fon2415.dts
           cat fon2415.mk >> openwrt/target/linux/ath79/image/generic.mk
 
-      - name: Feeds bijwerken
+      - name: Update feeds
         working-directory: openwrt
         run: |
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: Build-configuratie aanmaken
+      - name: Create build configuration
         working-directory: openwrt
         run: |
-          # Stap 1: basis target, dan defconfig
+          # Step 1: set base target and run defconfig
+          # The device symbol is unknown at this point — it gets added after
           printf 'CONFIG_TARGET_ath79=y\nCONFIG_TARGET_ath79_generic=y\n' > .config
           make defconfig
 
-          # Stap 2: device en pakketten toevoegen NA defconfig
-          # (defconfig verwijdert onbekende symbolen; na defconfig zijn ze bekend)
+          # Step 2: add device and packages after defconfig
+          # (defconfig drops unknown symbols; they are now known after step 1)
           printf '%s\n' \
             'CONFIG_TARGET_ath79_generic_DEVICE_fon_fon2415=y' \
             'CONFIG_PACKAGE_kmod-ath9k=y' \
@@ -62,31 +63,32 @@ jobs:
             'CONFIG_TARGET_ROOTFS_SQUASHFS=y' \
             >> .config
 
-          # Stap 3: tweede defconfig om de nieuwe symbolen te expanderen
+          # Step 3: second defconfig to expand the new symbols
           make defconfig
 
-          # Controleer of het device geselecteerd is
-          echo "--- Device selectie in .config ---"
+          # Verify device is selected
+          echo "--- Device selection in .config ---"
           if grep -q 'CONFIG_TARGET_ath79_generic_DEVICE_fon_fon2415=y' .config; then
-            echo "OK: fon_fon2415 geselecteerd"
+            echo "OK: fon_fon2415 selected"
           else
-            echo "FOUT: device niet geselecteerd — afbreken"
+            echo "ERROR: device not selected — aborting"
             grep fon2415 .config || true
             exit 1
           fi
 
-      - name: Image bouwen
+      - name: Build image
         working-directory: openwrt
         run: |
-          # FD 8 openen: OpenWrt schrijft timing-output naar >&8,
-          # zonder dit geeft bash "Bad file descriptor" en faalt de build.
+          # Open FD 8: OpenWrt writes timing output via >&8.
+          # Without this, bash exits with "Bad file descriptor" even
+          # when the build itself succeeds.
           exec 8>/dev/null
           make -j$(nproc) V=s 2>&1 | tee /tmp/build.log
           MAKE_EXIT=${PIPESTATUS[0]}
           echo "Make exit code: $MAKE_EXIT"
-          [ $MAKE_EXIT -eq 0 ] || { echo "=== Build mislukt — laatste 100 regels ==="; tail -100 /tmp/build.log; exit 1; }
+          [ $MAKE_EXIT -eq 0 ] || { echo "=== Build failed — last 100 lines ==="; tail -100 /tmp/build.log; exit 1; }
 
-      - name: Buildlog uploaden (altijd)
+      - name: Upload build log (always)
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -94,15 +96,15 @@ jobs:
           path: /tmp/build.log
           retention-days: 7
 
-      - name: Controleer output en kopieer image
+      - name: Check output and copy image
         run: |
-          echo "=== Inhoud bin/targets/ath79/generic/ ==="
+          echo "=== Contents of bin/targets/ath79/generic/ ==="
           ls -lh openwrt/bin/targets/ath79/generic/
           cp openwrt/bin/targets/ath79/generic/openwrt-ath79-generic-fon_fon2415-squashfs-factory.bin \
              fon2415.image
           ls -lh fon2415.image
 
-      - name: Image uploaden als artifact
+      - name: Upload image artifact
         uses: actions/upload-artifact@v4
         with:
           name: fon2415-openwrt-image

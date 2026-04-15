@@ -1,24 +1,24 @@
 // SPDX-License-Identifier: GPL-2.0-or-later OR MIT
 //
-// Fon Fonera Hub FON2415 (ook: FON2515A02 / Gramofon)
+// Fon Fonera Hub FON2415 (also known as: FON2515A02 / Gramofon)
 //
 // Hardware:
 //   CPU:   Atheros AR9341 (MIPS 74Kc, 535MHz)
 //   RAM:   64MB DDR2 (ESMT M14D5121632A)
 //   Flash: 16MB SPI NOR (MXIC MX25L128)
-//   WiFi:  2.4GHz 802.11b/g/n (geïntegreerd in AR9341)
-//   ETH:   2 poorten via Bi-TEK FM-1024LLF switch
+//   WiFi:  2.4GHz 802.11b/g/n (integrated in AR9341)
+//   ETH:   2 ports via Bi-TEK FM-1024LLF switch
 //   Audio: AKM AK4430ET DAC (3.5mm jack) — I2S
 //   UART:  J2 header, 115200 8N1, 3.3V TTL
 //
-// Flash-indeling (overeenstemmend met origineel U-Boot):
+// Flash layout (matching original U-Boot environment):
 //   0x000000 - 0x01ffff  u-boot      (128KB)
 //   0x020000 - 0xfdffff  firmware    (16.125MB — kernel + rootfs)
 //   0xfe0000 - 0xfeffff  fon_data    (64KB)
-//   0xff0000 - 0xffffff  art         (64KB, WiFi-kalibratie)
+//   0xff0000 - 0xffffff  art         (64KB, WiFi calibration)
 //
-// U-Boot: `run lf` flitst fon2415.image naar 0x9f020000
-//         `bootm 0x9f020000` start de kernel
+// U-Boot: `run lf` flashes fon2415.image to 0x9f020000
+//         `bootm 0x9f020000` starts the kernel
 
 /dts-v1/;
 
@@ -41,8 +41,8 @@
 	leds {
 		compatible = "gpio-leds";
 
-		// GPIO-nummers zijn schattingen op basis van soortgelijke
-		// Atheros-boards. Aanpassen na verificatie via /sys/class/gpio.
+		// GPIO numbers are estimates based on similar Atheros boards.
+		// Verify and adjust via /sys/class/gpio after first boot.
 		led_status: status {
 			label = "fon2415:green:status";
 			gpios = <&gpio 11 GPIO_ACTIVE_LOW>;
@@ -111,17 +111,15 @@
 
 // ── Ethernet ───────────────────────────────────────────────────────────────
 //
-// De Bi-TEK FM-1024LLF is een externe switch. Op AR9341-boards is dit
-// typisch een Atheros AR8035 of vergelijkbaar, verbonden via MDIO/RGMII.
-// eth0 = WAN-achtige poort, eth1 = LAN-achtige poort.
-// Pas phy-adressen aan als de poorten omgewisseld zijn.
+// The Bi-TEK FM-1024LLF is an external switch, likely connected via
+// MDIO/RGMII to the AR9341. eth0 = WAN-side port, eth1 = LAN-side port.
+// Swap phy addresses if ports appear reversed after booting.
 
 &mdio0 {
 	status = "okay";
 
 	phy0: ethernet-phy@0 {
 		reg = <0>;
-		// AR8035-specifiek: gigabit autoneg, geen EEE
 		eee-broken-100tx;
 		eee-broken-1000t;
 	};
@@ -156,15 +154,15 @@
 
 // ── WiFi ───────────────────────────────────────────────────────────────────
 //
-// WiFi-kalibratie zit in de ART-partitie op offset 0x1000.
-// Dit is het standaard Atheros-patroon voor AR9341.
+// WiFi calibration data is stored in the ART partition at offset 0x1000.
+// This is the standard Atheros pattern for AR9341.
 
 &wmac {
 	status = "okay";
 	mtd-cal-data = <&art 0x1000>;
 };
 
-// ── MAC-adres uit ART ──────────────────────────────────────────────────────
+// ── MAC address from ART ───────────────────────────────────────────────────
 
 &art {
 	nvmem-layout {
