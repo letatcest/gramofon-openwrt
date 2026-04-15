@@ -164,6 +164,75 @@
 	nvmem-cell-names = "calibration";
 };
 
+// ── Audio ──────────────────────────────────────────────────────────────────
+//
+// AR9341 built-in I2S controller + AKM AK4430ET DAC (no control bus).
+// GPIO assignments follow the Qualcomm Atheros CUS227 AR934X reference design.
+// If audio output is silent after loading the modules, try swapping GPIO 20/21
+// (LRCK and BICK) — the only variant seen in practice.
+//
+// Reference clock: AR9341 on Gramofon uses a 25 MHz crystal.
+
+&ref {
+	clock-frequency = <25000000>;
+};
+
+&apb {
+	stereo: i2s@180b0000 {
+		compatible = "qca,ar9341-i2s";
+
+		/*
+		 * Three exclusive regions: STEREO block, MBOX DMA, audio DPLL.
+		 * PLL (0x18050000) and GPIO (0x18040000) are shared with other
+		 * DTS nodes; the driver maps them via devm_ioremap (no claim).
+		 */
+		reg = <0x180b0000 0x18>,    /* stereo */
+		      <0x180a0000 0x6c>,    /* dma    */
+		      <0x18116200 0x10>;    /* dpll   */
+		reg-names = "stereo", "dma", "dpll";
+
+		interrupt-parent = <&miscintc>;
+		interrupts = <7>;
+
+		resets = <&rst 0>, <&rst 1>;
+		reset-names = "i2s", "mbox";
+
+		clocks = <&ref>;
+		clock-names = "ref";
+
+		#sound-dai-cells = <0>;
+
+		/* I2S GPIO pin assignments (CUS227 AR934X reference design) */
+		qca,i2s-mclk-gpio = <22>;
+		qca,i2s-bick-gpio = <21>;
+		qca,i2s-lrck-gpio = <20>;
+		qca,i2s-sdto-gpio = <18>;
+	};
+};
+
+/ {
+	ak4430et: ak4430et-codec {
+		compatible = "akm,ak4430et";
+		#sound-dai-cells = <0>;
+	};
+
+	sound {
+		compatible = "simple-audio-card";
+		simple-audio-card,name = "Gramofon";
+		simple-audio-card,format = "i2s";
+		simple-audio-card,bitclock-master = <&i2s_cpu>;
+		simple-audio-card,frame-master = <&i2s_cpu>;
+
+		i2s_cpu: simple-audio-card,cpu {
+			sound-dai = <&stereo>;
+		};
+
+		simple-audio-card,codec {
+			sound-dai = <&ak4430et>;
+		};
+	};
+};
+
 // ── MAC address and calibration data from ART ─────────────────────────────
 
 &art {

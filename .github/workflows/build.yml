@@ -7,6 +7,7 @@ on:
       - 'fon2415.dts'
       - 'fon2415.mk'
       - 'build_openwrt.sh'
+      - 'package/**'
       - '.github/workflows/build.yml'
   workflow_dispatch:
 
@@ -33,10 +34,11 @@ jobs:
           git clone --depth 1 --branch v24.10.6 \
             https://git.openwrt.org/openwrt/openwrt.git openwrt
 
-      - name: Copy DTS and device profile
+      - name: Copy DTS, device profile and audio package
         run: |
           cp fon2415.dts openwrt/target/linux/ath79/dts/qca9341_fon_fon2415.dts
           cat fon2415.mk >> openwrt/target/linux/ath79/image/generic.mk
+          cp -r package/ath79-audio openwrt/package/kernel/ath79-audio
 
       - name: Update feeds
         working-directory: openwrt
@@ -61,6 +63,9 @@ jobs:
             'CONFIG_PACKAGE_luci-ssl=y' \
             'CONFIG_PACKAGE_openssh-sftp-server=y' \
             'CONFIG_TARGET_ROOTFS_SQUASHFS=y' \
+            'CONFIG_PACKAGE_kmod-ath79-audio=y' \
+            'CONFIG_PACKAGE_kmod-sound-core=y' \
+            'CONFIG_PACKAGE_kmod-sound-soc-core=y' \
             >> .config
 
           # Step 3: second defconfig to expand the new symbols
