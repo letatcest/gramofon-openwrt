@@ -90,6 +90,7 @@
 			};
 
 			partition@20000 {
+				compatible = "denx,uimage";
 				label = "firmware";
 				reg = <0x020000 0xfc0000>;
 			};
