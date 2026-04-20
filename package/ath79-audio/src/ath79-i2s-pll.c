@@ -248,6 +248,7 @@ int ath79_audio_set_freq(struct ath79_i2s_dev *adev, int freq)
 {
 	const struct ath79_pll_config *cfg;
 	unsigned long ref_rate;
+	int retries;
 
 	ref_rate = clk_get_rate(adev->ref_clk);
 	dev_info(adev->dev, "audio PLL: ref_rate=%lu Hz, target=%d Hz\n",
@@ -273,8 +274,13 @@ int ath79_audio_set_freq(struct ath79_i2s_dev *adev, int freq)
 		return -EINVAL;
 	}
 
-	/* Converge the DPLL */
+	/* Converge the DPLL — both loops are bounded to avoid starving
+	 * the single-core MIPS CPU with infinite udelay() spins. */
+	retries = 20;
+
 	do {
+		int meas_timeout = 1000;  /* 1000 × 10 µs = 10 ms */
+
 		dpll_do_meas_clear(adev);
 		pll_powerdown(adev);
 		udelay(100);
@@ -293,10 +299,21 @@ int ath79_audio_set_freq(struct ath79_i2s_dev *adev, int freq)
 		dpll_do_meas_clear(adev);
 		dpll_do_meas_set(adev);
 
-		while (!dpll_meas_done(adev))
+		while (!dpll_meas_done(adev) && --meas_timeout > 0)
 			udelay(10);
 
-	} while (dpll_sqsum_dvc(adev) >= 0x40000);
+		if (!meas_timeout) {
+			dev_err(adev->dev, "DPLL measurement timeout\n");
+			return -ETIMEDOUT;
+		}
+
+	} while (dpll_sqsum_dvc(adev) >= 0x40000 && --retries > 0);
+
+	if (!retries) {
+		dev_err(adev->dev, "DPLL failed to converge, sqsum_dvc=0x%x\n",
+			dpll_sqsum_dvc(adev));
+		return -ETIMEDOUT;
+	}
 
 	dev_info(adev->dev, "audio PLL locked: sqsum_dvc=0x%x\n",
 		 dpll_sqsum_dvc(adev));
