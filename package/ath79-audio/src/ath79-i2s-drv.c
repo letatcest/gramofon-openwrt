@@ -18,6 +18,7 @@
 #include <linux/clk.h>
 #include <linux/reset.h>
 #include <linux/delay.h>
+#include <linux/atomic.h>
 #include <linux/dma-mapping.h>
 #include <linux/dmapool.h>
 #include <linux/interrupt.h>
@@ -249,6 +250,7 @@ static irqreturn_t ath79_pcm_interrupt(int irq, void *dev_id)
 	u32 status;
 	unsigned int period_bytes, played_size;
 
+	atomic_inc(&adev->irq_count);
 	status = dma_rr(adev, AR934X_DMA_REG_MBOX_INT_STATUS);
 
 	if (status & AR934X_DMA_MBOX_INT_STATUS_RX_DMA_COMPLETE) {
@@ -387,9 +389,15 @@ static int ath79_pcm_trigger(struct snd_soc_component *component,
 
 	switch (cmd) {
 	case SNDRV_PCM_TRIGGER_START:
-		dev_info(adev->dev, "trigger START: STEREO_CONFIG=0x%08x INT_ENABLE=0x%08x\n",
+		dev_info(adev->dev,
+			 "trigger START: STEREO=0x%08x INT_ENABLE=0x%08x INT_STATUS=0x%08x RX_CTRL=0x%08x irq_count=%d\n",
 			 stereo_rr(adev, AR934X_STEREO_REG_CONFIG),
-			 dma_rr(adev, AR934X_DMA_REG_MBOX_INT_ENABLE));
+			 dma_rr(adev, AR934X_DMA_REG_MBOX_INT_ENABLE),
+			 dma_rr(adev, AR934X_DMA_REG_MBOX_INT_STATUS),
+			 dma_rr(adev, AR934X_DMA_REG_MBOX0_DMA_RX_CONTROL),
+			 atomic_read(&adev->irq_count));
+		/* Re-arm INT_ENABLE in case something cleared bit 0 since prepare() */
+		ath79_mbox_interrupt_enable(adev, AR934X_DMA_MBOX0_INT_RX_COMPLETE);
 		ath79_mbox_dma_start(adev, rtpriv);
 		break;
 	case SNDRV_PCM_TRIGGER_STOP:
@@ -528,6 +536,7 @@ static int ath79_i2s_probe(struct platform_device *pdev)
 	adev->dev = dev;
 	spin_lock_init(&adev->stereo_lock);
 	spin_lock_init(&adev->pll_lock);
+	atomic_set(&adev->irq_count, 0);
 
 	/*
 	 * Unique regions — claim via platform resource (exclusive).
@@ -544,6 +553,10 @@ static int ath79_i2s_probe(struct platform_device *pdev)
 	adev->dpll_base = devm_platform_ioremap_resource_byname(pdev, "dpll");
 	if (IS_ERR(adev->dpll_base))
 		return PTR_ERR(adev->dpll_base);
+
+	dev_info(dev, "probe: INT_ENABLE at boot=0x%08x INT_STATUS=0x%08x\n",
+		 dma_rr(adev, AR934X_DMA_REG_MBOX_INT_ENABLE),
+		 dma_rr(adev, AR934X_DMA_REG_MBOX_INT_STATUS));
 
 	/*
 	 * Shared regions — use devm_ioremap (no resource claiming) to avoid

@@ -40,13 +40,18 @@ void ath79_mbox_fifo_reset(struct ath79_i2s_dev *adev, u32 mask)
 
 void ath79_mbox_interrupt_enable(struct ath79_i2s_dev *adev, u32 mask)
 {
-	u32 t;
+	u32 before, to_write, after;
 
 	spin_lock(&ath79_mbox_lock);
-	t = dma_rr(adev, AR934X_DMA_REG_MBOX_INT_ENABLE);
-	t |= mask;
-	dma_wr(adev, AR934X_DMA_REG_MBOX_INT_ENABLE, t);
+	before = dma_rr(adev, AR934X_DMA_REG_MBOX_INT_ENABLE);
+	to_write = before | mask;
+	dma_wr(adev, AR934X_DMA_REG_MBOX_INT_ENABLE, to_write);
+	after = dma_rr(adev, AR934X_DMA_REG_MBOX_INT_ENABLE);
 	spin_unlock(&ath79_mbox_lock);
+
+	dev_info(adev->dev,
+		 "INT_ENABLE mask=0x%08x before=0x%08x wrote=0x%08x readback=0x%08x\n",
+		 mask, before, to_write, after);
 }
 
 void ath79_mbox_interrupt_ack(struct ath79_i2s_dev *adev, u32 mask)

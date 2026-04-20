@@ -149,6 +149,8 @@ struct ath79_i2s_dev {
 	spinlock_t		stereo_lock;
 	spinlock_t		pll_lock;
 
+	atomic_t		irq_count;
+
 	/*
 	 * PCM per-card state embedded here so the ISR and component ops can
 	 * always reach it without going through snd_soc_component_get_drvdata
