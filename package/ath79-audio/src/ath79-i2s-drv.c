@@ -82,10 +82,22 @@ static void gpio_set_i2s_mux(struct ath79_i2s_dev *adev,
 
 static void ath79_i2s_gpio_mux_setup(struct ath79_i2s_dev *adev)
 {
+	u32 oe;
+
 	gpio_set_i2s_mux(adev, adev->gpio_mclk, AR934X_GPIO_OUT_MUX_I2S_MCK);
 	gpio_set_i2s_mux(adev, adev->gpio_bick, AR934X_GPIO_OUT_MUX_I2S_CLK);
 	gpio_set_i2s_mux(adev, adev->gpio_lrck, AR934X_GPIO_OUT_MUX_I2S_WS);
 	gpio_set_i2s_mux(adev, adev->gpio_sdto, AR934X_GPIO_OUT_MUX_I2S_SD);
+
+	/*
+	 * AR934X GPIO_OE register (offset 0x00): bit=0 means output enabled.
+	 * The peripheral mux alone is not enough — the output driver must also
+	 * be enabled or the I2S signals never leave the SoC.
+	 */
+	oe = __raw_readl(adev->gpio_base + 0x00);
+	oe &= ~(BIT(adev->gpio_mclk) | BIT(adev->gpio_bick) |
+		BIT(adev->gpio_lrck) | BIT(adev->gpio_sdto));
+	__raw_writel(oe, adev->gpio_base + 0x00);
 }
 
 /* ── DAI ops ────────────────────────────────────────────────────────── */
@@ -121,8 +133,11 @@ static int ath79_i2s_hw_params(struct snd_pcm_substream *ss,
 {
 	struct ath79_i2s_dev *adev = snd_soc_dai_get_drvdata(dai);
 	u32 mask = 0, t;
+	int ret;
 
-	ath79_audio_set_freq(adev, params_rate(params));
+	ret = ath79_audio_set_freq(adev, params_rate(params));
+	if (ret)
+		return ret;
 
 	switch (params_format(params)) {
 	case SNDRV_PCM_FORMAT_S8:
@@ -372,6 +387,9 @@ static int ath79_pcm_trigger(struct snd_soc_component *component,
 
 	switch (cmd) {
 	case SNDRV_PCM_TRIGGER_START:
+		dev_info(adev->dev, "trigger START: STEREO_CONFIG=0x%08x INT_ENABLE=0x%08x\n",
+			 stereo_rr(adev, AR934X_STEREO_REG_CONFIG),
+			 dma_rr(adev, AR934X_DMA_REG_MBOX_INT_ENABLE));
 		ath79_mbox_dma_start(adev, rtpriv);
 		break;
 	case SNDRV_PCM_TRIGGER_STOP:

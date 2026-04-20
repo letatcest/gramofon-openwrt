@@ -250,6 +250,8 @@ int ath79_audio_set_freq(struct ath79_i2s_dev *adev, int freq)
 	unsigned long ref_rate;
 
 	ref_rate = clk_get_rate(adev->ref_clk);
+	dev_info(adev->dev, "audio PLL: ref_rate=%lu Hz, target=%d Hz\n",
+		 ref_rate, freq);
 
 	switch (ref_rate) {
 	case 25000000:
@@ -295,6 +297,9 @@ int ath79_audio_set_freq(struct ath79_i2s_dev *adev, int freq)
 			udelay(10);
 
 	} while (dpll_sqsum_dvc(adev) >= 0x40000);
+
+	dev_info(adev->dev, "audio PLL locked: sqsum_dvc=0x%x\n",
+		 dpll_sqsum_dvc(adev));
 
 	return 0;
 }

@@ -30,6 +30,8 @@ void ath79_mbox_fifo_reset(struct ath79_i2s_dev *adev, u32 mask)
 {
 	dma_wr(adev, AR934X_DMA_REG_MBOX_FIFO_RESET, mask);
 	udelay(50);
+	/* Clear reset bits so the FIFO comes out of reset */
+	dma_wr(adev, AR934X_DMA_REG_MBOX_FIFO_RESET, 0);
 	/* Datasheet: reset stereo controller whenever MBOX DMA is reset */
 	ath79_stereo_reset(adev);
 }
