@@ -236,10 +236,10 @@ static irqreturn_t ath79_pcm_interrupt(int irq, void *dev_id)
 
 	status = dma_rr(adev, AR934X_DMA_REG_MBOX_INT_STATUS);
 
-	if (status & AR934X_DMA_MBOX_INT_STATUS_TX_DMA_COMPLETE) {
-		/* TX = memory→I2S = playback */
+	if (status & AR934X_DMA_MBOX_INT_STATUS_RX_DMA_COMPLETE) {
+		/* Always ack to prevent interrupt storm */
 		ath79_mbox_interrupt_ack(adev,
-					 AR934X_DMA_MBOX_INT_STATUS_TX_DMA_COMPLETE);
+					 AR934X_DMA_MBOX_INT_STATUS_RX_DMA_COMPLETE);
 		if (prdata->playback) {
 			rtpriv = prdata->playback->runtime->private_data;
 			rtpriv->last_played = ath79_pcm_get_last_played(rtpriv);
@@ -253,10 +253,10 @@ static irqreturn_t ath79_pcm_interrupt(int irq, void *dev_id)
 		}
 	}
 
-	if (status & AR934X_DMA_MBOX_INT_STATUS_RX_DMA_COMPLETE) {
-		/* RX = I2S→memory = capture */
+	if (status & AR934X_DMA_MBOX_INT_STATUS_TX_DMA_COMPLETE) {
+		/* Always ack to prevent interrupt storm */
 		ath79_mbox_interrupt_ack(adev,
-					 AR934X_DMA_MBOX_INT_STATUS_RX_DMA_COMPLETE);
+					 AR934X_DMA_MBOX_INT_STATUS_TX_DMA_COMPLETE);
 		if (prdata->capture) {
 			rtpriv = prdata->capture->runtime->private_data;
 			rtpriv->last_played = ath79_pcm_get_last_played(rtpriv);

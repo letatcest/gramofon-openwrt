@@ -65,13 +65,13 @@ void ath79_mbox_dma_start(struct ath79_i2s_dev *adev,
 			  struct ath79_pcm_rt_priv *rtpriv)
 {
 	if (rtpriv->direction == SNDRV_PCM_STREAM_PLAYBACK) {
-		dma_wr(adev, AR934X_DMA_REG_MBOX0_DMA_TX_CONTROL,
-		       AR934X_DMA_MBOX_DMA_CONTROL_START);
-		dma_rr(adev, AR934X_DMA_REG_MBOX0_DMA_TX_CONTROL);
-	} else {
 		dma_wr(adev, AR934X_DMA_REG_MBOX0_DMA_RX_CONTROL,
 		       AR934X_DMA_MBOX_DMA_CONTROL_START);
 		dma_rr(adev, AR934X_DMA_REG_MBOX0_DMA_RX_CONTROL);
+	} else {
+		dma_wr(adev, AR934X_DMA_REG_MBOX0_DMA_TX_CONTROL,
+		       AR934X_DMA_MBOX_DMA_CONTROL_START);
+		dma_rr(adev, AR934X_DMA_REG_MBOX0_DMA_TX_CONTROL);
 	}
 }
 
@@ -79,13 +79,13 @@ void ath79_mbox_dma_stop(struct ath79_i2s_dev *adev,
 			 struct ath79_pcm_rt_priv *rtpriv)
 {
 	if (rtpriv->direction == SNDRV_PCM_STREAM_PLAYBACK) {
-		dma_wr(adev, AR934X_DMA_REG_MBOX0_DMA_TX_CONTROL,
-		       AR934X_DMA_MBOX_DMA_CONTROL_STOP);
-		dma_rr(adev, AR934X_DMA_REG_MBOX0_DMA_TX_CONTROL);
-	} else {
 		dma_wr(adev, AR934X_DMA_REG_MBOX0_DMA_RX_CONTROL,
 		       AR934X_DMA_MBOX_DMA_CONTROL_STOP);
 		dma_rr(adev, AR934X_DMA_REG_MBOX0_DMA_RX_CONTROL);
+	} else {
+		dma_wr(adev, AR934X_DMA_REG_MBOX0_DMA_TX_CONTROL,
+		       AR934X_DMA_MBOX_DMA_CONTROL_STOP);
+		dma_rr(adev, AR934X_DMA_REG_MBOX0_DMA_TX_CONTROL);
 	}
 	/*
 	 * Wait long enough for the DMA engine to finish the current
@@ -114,18 +114,6 @@ void ath79_mbox_dma_prepare(struct ath79_i2s_dev *adev,
 	if (rtpriv->direction == SNDRV_PCM_STREAM_PLAYBACK) {
 		t = dma_rr(adev, AR934X_DMA_REG_MBOX_DMA_POLICY);
 		dma_wr(adev, AR934X_DMA_REG_MBOX_DMA_POLICY,
-		       t | AR934X_DMA_MBOX_DMA_POLICY_TX_QUANTUM |
-		       (6 << AR934X_DMA_MBOX_DMA_POLICY_TX_FIFO_THRESH_SHIFT));
-
-		desc = list_first_entry(&rtpriv->dma_head,
-					struct ath79_pcm_desc, list);
-		dma_wr(adev, AR934X_DMA_REG_MBOX0_DMA_TX_DESCRIPTOR_BASE,
-		       (u32)desc->phys);
-		ath79_mbox_interrupt_enable(adev,
-					    AR934X_DMA_MBOX0_INT_TX_COMPLETE);
-	} else {
-		t = dma_rr(adev, AR934X_DMA_REG_MBOX_DMA_POLICY);
-		dma_wr(adev, AR934X_DMA_REG_MBOX_DMA_POLICY,
 		       t | AR934X_DMA_MBOX_DMA_POLICY_RX_QUANTUM |
 		       (6 << AR934X_DMA_MBOX_DMA_POLICY_TX_FIFO_THRESH_SHIFT));
 
@@ -135,6 +123,18 @@ void ath79_mbox_dma_prepare(struct ath79_i2s_dev *adev,
 		       (u32)desc->phys);
 		ath79_mbox_interrupt_enable(adev,
 					    AR934X_DMA_MBOX0_INT_RX_COMPLETE);
+	} else {
+		t = dma_rr(adev, AR934X_DMA_REG_MBOX_DMA_POLICY);
+		dma_wr(adev, AR934X_DMA_REG_MBOX_DMA_POLICY,
+		       t | AR934X_DMA_MBOX_DMA_POLICY_TX_QUANTUM |
+		       (6 << AR934X_DMA_MBOX_DMA_POLICY_TX_FIFO_THRESH_SHIFT));
+
+		desc = list_first_entry(&rtpriv->dma_head,
+					struct ath79_pcm_desc, list);
+		dma_wr(adev, AR934X_DMA_REG_MBOX0_DMA_TX_DESCRIPTOR_BASE,
+		       (u32)desc->phys);
+		ath79_mbox_interrupt_enable(adev,
+					    AR934X_DMA_MBOX0_INT_TX_COMPLETE);
 	}
 }
 
