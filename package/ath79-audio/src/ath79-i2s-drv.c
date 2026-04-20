@@ -580,6 +580,11 @@ static int ath79_i2s_probe(struct platform_device *pdev)
 		dev_err(dev, "cannot get ref clock\n");
 		return PTR_ERR(adev->ref_clk);
 	}
+	ret = clk_prepare_enable(adev->ref_clk);
+	if (ret) {
+		dev_err(dev, "cannot enable ref clock: %d\n", ret);
+		return ret;
+	}
 
 	/* GPIO pin assignments from DTS */
 	ret = of_property_read_u32(np, "qca,i2s-mclk-gpio",
@@ -634,6 +639,10 @@ static int ath79_i2s_probe(struct platform_device *pdev)
 
 static int ath79_i2s_remove(struct platform_device *pdev)
 {
+	struct ath79_i2s_dev *adev = platform_get_drvdata(pdev);
+
+	if (adev && !IS_ERR_OR_NULL(adev->ref_clk))
+		clk_disable_unprepare(adev->ref_clk);
 	ath79_i2s_dev_g = NULL;
 	return 0;
 }
