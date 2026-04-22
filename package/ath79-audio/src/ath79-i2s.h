@@ -64,12 +64,12 @@
 #define AR934X_DMA_MBOX0_FIFO_RESET_RX		BIT(0)
 #define AR934X_DMA_MBOX0_FIFO_RESET_TX		BIT(4)
 
-#define AR934X_DMA_REG_MBOX_INT_STATUS		0x60
-#define AR934X_DMA_REG_MBOX_INT_ENABLE		0x64
-#define AR934X_DMA_MBOX0_INT_RX_COMPLETE	BIT(0)
-#define AR934X_DMA_MBOX0_INT_TX_COMPLETE	BIT(4)
-#define AR934X_DMA_MBOX_INT_STATUS_RX_DMA_COMPLETE BIT(0)
-#define AR934X_DMA_MBOX_INT_STATUS_TX_DMA_COMPLETE BIT(4)
+#define AR934X_DMA_REG_MBOX_INT_STATUS		0x44
+#define AR934X_DMA_REG_MBOX_INT_ENABLE		0x4c
+#define AR934X_DMA_MBOX0_INT_RX_COMPLETE	BIT(10)
+#define AR934X_DMA_MBOX0_INT_TX_COMPLETE	BIT(6)
+#define AR934X_DMA_MBOX_INT_STATUS_RX_DMA_COMPLETE BIT(10)
+#define AR934X_DMA_MBOX_INT_STATUS_TX_DMA_COMPLETE BIT(6)
 
 /* Reset module register (offset from base 0x18060000) — used via reset framework */
 #define AR934X_RESET_MBOX			BIT(1)
@@ -150,6 +150,7 @@ struct ath79_i2s_dev {
 	spinlock_t		pll_lock;
 
 	atomic_t		irq_count;
+	struct delayed_work	dma_poll_work;
 
 	/*
 	 * PCM per-card state embedded here so the ISR and component ops can

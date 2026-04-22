@@ -23,6 +23,7 @@
 #include <linux/dmapool.h>
 #include <linux/interrupt.h>
 #include <linux/io.h>
+#include <linux/workqueue.h>
 #include <linux/slab.h>
 #include <sound/core.h>
 #include <sound/soc.h>
@@ -219,8 +220,7 @@ static struct snd_soc_dai_driver ath79_i2s_dai = {
 static const struct snd_pcm_hardware ath79_pcm_hardware = {
 	.info           = SNDRV_PCM_INFO_MMAP        |
 			  SNDRV_PCM_INFO_MMAP_VALID  |
-			  SNDRV_PCM_INFO_INTERLEAVED |
-			  SNDRV_PCM_INFO_NO_PERIOD_WAKEUP,
+			  SNDRV_PCM_INFO_INTERLEAVED,
 	.formats        = SNDRV_PCM_FMTBIT_S8    |
 			  SNDRV_PCM_FMTBIT_S16_BE | SNDRV_PCM_FMTBIT_S16_LE |
 			  SNDRV_PCM_FMTBIT_S24_BE | SNDRV_PCM_FMTBIT_S24_LE |
@@ -240,6 +240,21 @@ static const struct snd_pcm_hardware ath79_pcm_hardware = {
 	.fifo_size      = 0,
 };
 
+/* ── DMA diagnostic poll (delayed work) ─────────────────────────────── */
+
+static void ath79_dma_poll_fn(struct work_struct *work)
+{
+	struct ath79_i2s_dev *adev =
+		container_of(work, struct ath79_i2s_dev, dma_poll_work.work);
+	u32 st  = dma_rr(adev, AR934X_DMA_REG_MBOX_INT_STATUS);
+	u32 en  = dma_rr(adev, AR934X_DMA_REG_MBOX_INT_ENABLE);
+	u32 d64 = dma_rr(adev, 0x64);
+	u32 d68 = dma_rr(adev, 0x68);
+
+	pr_alert("ath79 dma_poll: st=%08x en=%08x 0x64=%08x 0x68=%08x irqs=%d\n",
+		 st, en, d64, d68, atomic_read(&adev->irq_count));
+}
+
 /* ── DMA interrupt handler ───────────────────────────────────────────── */
 
 static irqreturn_t ath79_pcm_interrupt(int irq, void *dev_id)
@@ -253,16 +268,23 @@ static irqreturn_t ath79_pcm_interrupt(int irq, void *dev_id)
 	atomic_inc(&adev->irq_count);
 	status = dma_rr(adev, AR934X_DMA_REG_MBOX_INT_STATUS);
 
+	/* RX complete = memory→FIFO done = playback period done */
 	if (status & AR934X_DMA_MBOX_INT_STATUS_RX_DMA_COMPLETE) {
-		/* Always ack to prevent interrupt storm */
-		ath79_mbox_interrupt_ack(adev,
-					 AR934X_DMA_MBOX_INT_STATUS_RX_DMA_COMPLETE);
 		if (prdata->playback) {
 			rtpriv = prdata->playback->runtime->private_data;
 			rtpriv->last_played = ath79_pcm_get_last_played(rtpriv);
 			period_bytes = snd_pcm_lib_period_bytes(prdata->playback);
 			played_size  = ath79_pcm_set_own_bits(rtpriv);
 			rtpriv->elapsed_size += played_size;
+			pr_alert("ath79 RX isr#%d st=%08x en=%08x played=%u el=%u per=%u lp=%p\n",
+				 atomic_read(&adev->irq_count), status,
+				 dma_rr(adev, AR934X_DMA_REG_MBOX_INT_ENABLE),
+				 played_size, rtpriv->elapsed_size,
+				 period_bytes, rtpriv->last_played);
+			ath79_mbox_interrupt_ack(adev,
+						 AR934X_DMA_MBOX_INT_STATUS_RX_DMA_COMPLETE);
+			/* No RESUME needed: set_own_bits writes OWN=1 on the
+			 * stalled descriptor, which auto-kicks DMA hardware. */
 			if (rtpriv->elapsed_size >= period_bytes) {
 				rtpriv->elapsed_size %= period_bytes;
 				snd_pcm_period_elapsed(prdata->playback);
@@ -270,14 +292,14 @@ static irqreturn_t ath79_pcm_interrupt(int irq, void *dev_id)
 		}
 	}
 
+	/* TX complete = FIFO→memory done = capture period done */
 	if (status & AR934X_DMA_MBOX_INT_STATUS_TX_DMA_COMPLETE) {
-		/* Always ack to prevent interrupt storm */
-		ath79_mbox_interrupt_ack(adev,
-					 AR934X_DMA_MBOX_INT_STATUS_TX_DMA_COMPLETE);
 		if (prdata->capture) {
 			rtpriv = prdata->capture->runtime->private_data;
 			rtpriv->last_played = ath79_pcm_get_last_played(rtpriv);
 			ath79_pcm_set_own_bits(rtpriv);
+			ath79_mbox_interrupt_ack(adev,
+						 AR934X_DMA_MBOX_INT_STATUS_TX_DMA_COMPLETE);
 			snd_pcm_period_elapsed(prdata->capture);
 		}
 	}
@@ -389,18 +411,11 @@ static int ath79_pcm_trigger(struct snd_soc_component *component,
 
 	switch (cmd) {
 	case SNDRV_PCM_TRIGGER_START:
-		dev_info(adev->dev,
-			 "trigger START: STEREO=0x%08x INT_ENABLE=0x%08x INT_STATUS=0x%08x RX_CTRL=0x%08x irq_count=%d\n",
-			 stereo_rr(adev, AR934X_STEREO_REG_CONFIG),
-			 dma_rr(adev, AR934X_DMA_REG_MBOX_INT_ENABLE),
-			 dma_rr(adev, AR934X_DMA_REG_MBOX_INT_STATUS),
-			 dma_rr(adev, AR934X_DMA_REG_MBOX0_DMA_RX_CONTROL),
-			 atomic_read(&adev->irq_count));
-		/* Re-arm INT_ENABLE in case something cleared bit 0 since prepare() */
-		ath79_mbox_interrupt_enable(adev, AR934X_DMA_MBOX0_INT_RX_COMPLETE);
 		ath79_mbox_dma_start(adev, rtpriv);
+		schedule_delayed_work(&adev->dma_poll_work, msecs_to_jiffies(200));
 		break;
 	case SNDRV_PCM_TRIGGER_STOP:
+		cancel_delayed_work(&adev->dma_poll_work);
 		ath79_mbox_dma_stop(adev, rtpriv);
 		break;
 	default:
@@ -426,6 +441,7 @@ static int ath79_pcm_mmap(struct snd_soc_component *component,
 			  struct snd_pcm_substream *ss,
 			  struct vm_area_struct *vma)
 {
+	vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
 	return remap_pfn_range(vma, vma->vm_start,
 			       ss->dma_buffer.addr >> PAGE_SHIFT,
 			       vma->vm_end - vma->vm_start,
@@ -537,6 +553,7 @@ static int ath79_i2s_probe(struct platform_device *pdev)
 	spin_lock_init(&adev->stereo_lock);
 	spin_lock_init(&adev->pll_lock);
 	atomic_set(&adev->irq_count, 0);
+	INIT_DELAYED_WORK(&adev->dma_poll_work, ath79_dma_poll_fn);
 
 	/*
 	 * Unique regions — claim via platform resource (exclusive).

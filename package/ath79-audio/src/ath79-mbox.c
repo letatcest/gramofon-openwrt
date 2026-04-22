@@ -49,8 +49,7 @@ void ath79_mbox_interrupt_enable(struct ath79_i2s_dev *adev, u32 mask)
 	after = dma_rr(adev, AR934X_DMA_REG_MBOX_INT_ENABLE);
 	spin_unlock(&ath79_mbox_lock);
 
-	dev_info(adev->dev,
-		 "INT_ENABLE mask=0x%08x before=0x%08x wrote=0x%08x readback=0x%08x\n",
+	pr_alert("ath79 INT_ENABLE mask=0x%08x before=0x%08x wrote=0x%08x after=0x%08x\n",
 		 mask, before, to_write, after);
 }
 
@@ -71,10 +70,17 @@ void ath79_mbox_interrupt_ack(struct ath79_i2s_dev *adev, u32 mask)
 void ath79_mbox_dma_start(struct ath79_i2s_dev *adev,
 			  struct ath79_pcm_rt_priv *rtpriv)
 {
+	/*
+	 * AR9341 MBOX naming from the MBOX controller's perspective:
+	 *   RX DMA = MBOX receives from host memory → FIFO → I2S (playback)
+	 *   TX DMA = MBOX transmits from I2S → FIFO → host memory (capture)
+	 */
 	if (rtpriv->direction == SNDRV_PCM_STREAM_PLAYBACK) {
 		dma_wr(adev, AR934X_DMA_REG_MBOX0_DMA_RX_CONTROL,
 		       AR934X_DMA_MBOX_DMA_CONTROL_START);
-		dma_rr(adev, AR934X_DMA_REG_MBOX0_DMA_RX_CONTROL);
+		pr_alert("ath79 dma_start: RX_CONTROL wrote START, rb=0x%08x INT_EN=0x%08x\n",
+			 dma_rr(adev, AR934X_DMA_REG_MBOX0_DMA_RX_CONTROL),
+			 dma_rr(adev, AR934X_DMA_REG_MBOX_INT_ENABLE));
 	} else {
 		dma_wr(adev, AR934X_DMA_REG_MBOX0_DMA_TX_CONTROL,
 		       AR934X_DMA_MBOX_DMA_CONTROL_START);
@@ -85,6 +91,10 @@ void ath79_mbox_dma_start(struct ath79_i2s_dev *adev,
 void ath79_mbox_dma_stop(struct ath79_i2s_dev *adev,
 			 struct ath79_pcm_rt_priv *rtpriv)
 {
+	/* Disable all interrupts first to prevent ISR from issuing RESUME
+	 * after STOP, which would cause DMA to run with freed descriptors. */
+	dma_wr(adev, AR934X_DMA_REG_MBOX_INT_ENABLE, 0);
+
 	if (rtpriv->direction == SNDRV_PCM_STREAM_PLAYBACK) {
 		dma_wr(adev, AR934X_DMA_REG_MBOX0_DMA_RX_CONTROL,
 		       AR934X_DMA_MBOX_DMA_CONTROL_STOP);
@@ -94,11 +104,6 @@ void ath79_mbox_dma_stop(struct ath79_i2s_dev *adev,
 		       AR934X_DMA_MBOX_DMA_CONTROL_STOP);
 		dma_rr(adev, AR934X_DMA_REG_MBOX0_DMA_TX_CONTROL);
 	}
-	/*
-	 * Wait long enough for the DMA engine to finish the current
-	 * transfer.  delay_time is calculated from sample rate + margin.
-	 */
-	mdelay(rtpriv->delay_time);
 }
 
 void ath79_mbox_dma_reset(struct ath79_i2s_dev *adev)
@@ -118,6 +123,34 @@ void ath79_mbox_dma_prepare(struct ath79_i2s_dev *adev,
 	struct ath79_pcm_desc *desc;
 	u32 t;
 
+	/* Full register dump of MBOX DMA space to verify layout */
+	pr_alert("ath79 DMA-A: 04=%08x 08=%08x 0c=%08x 10=%08x 14=%08x 18=%08x\n",
+		 dma_rr(adev, 0x04), dma_rr(adev, 0x08),
+		 dma_rr(adev, 0x0c), dma_rr(adev, 0x10),
+		 dma_rr(adev, 0x14), dma_rr(adev, 0x18));
+	pr_alert("ath79 DMA-B: 1c=%08x 20=%08x 24=%08x 28=%08x 2c=%08x 30=%08x\n",
+		 dma_rr(adev, 0x1c), dma_rr(adev, 0x20),
+		 dma_rr(adev, 0x24), dma_rr(adev, 0x28),
+		 dma_rr(adev, 0x2c), dma_rr(adev, 0x30));
+	pr_alert("ath79 DMA-C: 34=%08x 38=%08x 3c=%08x 40=%08x 44=%08x 48=%08x\n",
+		 dma_rr(adev, 0x34), dma_rr(adev, 0x38),
+		 dma_rr(adev, 0x3c), dma_rr(adev, 0x40),
+		 dma_rr(adev, 0x44), dma_rr(adev, 0x48));
+	pr_alert("ath79 DMA-D: 4c=%08x 50=%08x 54=%08x 58=%08x 5c=%08x 60=%08x\n",
+		 dma_rr(adev, 0x4c), dma_rr(adev, 0x50),
+		 dma_rr(adev, 0x54), dma_rr(adev, 0x58),
+		 dma_rr(adev, 0x5c), dma_rr(adev, 0x60));
+	pr_alert("ath79 DMA-E: 64=%08x 68=%08x\n",
+		 dma_rr(adev, 0x64), dma_rr(adev, 0x68));
+
+	/* Clear enables and pending DMA-complete status before reprogramming.
+	 * Only clear known W1C bits — writing BIT(0)/BIT(2) (FIFO threshold
+	 * status, always set) has unknown side-effects. */
+	dma_wr(adev, AR934X_DMA_REG_MBOX_INT_ENABLE, 0);
+	dma_wr(adev, AR934X_DMA_REG_MBOX_INT_STATUS,
+	       AR934X_DMA_MBOX0_INT_TX_COMPLETE |
+	       AR934X_DMA_MBOX0_INT_RX_COMPLETE);
+
 	if (rtpriv->direction == SNDRV_PCM_STREAM_PLAYBACK) {
 		t = dma_rr(adev, AR934X_DMA_REG_MBOX_DMA_POLICY);
 		dma_wr(adev, AR934X_DMA_REG_MBOX_DMA_POLICY,
@@ -128,6 +161,13 @@ void ath79_mbox_dma_prepare(struct ath79_i2s_dev *adev,
 					struct ath79_pcm_desc, list);
 		dma_wr(adev, AR934X_DMA_REG_MBOX0_DMA_RX_DESCRIPTOR_BASE,
 		       (u32)desc->phys);
+		pr_alert("ath79 prepare RX: pol_b=0x%08x pol_a=0x%08x base=0x%08x rb=0x%08x w0=0x%08x w1=0x%08x w2=0x%08x stereo=0x%08x\n",
+			 t,
+			 dma_rr(adev, AR934X_DMA_REG_MBOX_DMA_POLICY),
+			 (u32)desc->phys,
+			 dma_rr(adev, AR934X_DMA_REG_MBOX0_DMA_RX_DESCRIPTOR_BASE),
+			 ((u32 *)desc)[0], ((u32 *)desc)[1], ((u32 *)desc)[2],
+			 stereo_rr(adev, AR934X_STEREO_REG_CONFIG));
 		ath79_mbox_interrupt_enable(adev,
 					    AR934X_DMA_MBOX0_INT_RX_COMPLETE);
 	} else {
@@ -186,6 +226,9 @@ int ath79_mbox_dma_map(struct ath79_pcm_rt_priv *rtpriv,
 	desc  = list_first_entry(&rtpriv->dma_head, struct ath79_pcm_desc, list);
 	prev  = list_entry(rtpriv->dma_head.prev,   struct ath79_pcm_desc, list);
 	prev->NextPtr = desc->phys;
+
+	pr_alert("ath79 dma_map: period=%u buf=%u ndesc=%u\n",
+		 period_bytes, bufsize, bufsize / period_bytes);
 
 	return 0;
 }
