@@ -296,30 +296,14 @@ int ath79_audio_set_freq(struct ath79_i2s_dev *adev, int freq)
 		stereo_set_posedge(adev, cfg->posedge);
 
 		pll_powerup(adev);
-		/* Give the PLL time to stabilise before triggering measurement */
-		udelay(100);
 		dpll_do_meas_clear(adev);
 		dpll_do_meas_set(adev);
-
-		dev_info(adev->dev,
-			 "PLL CFG=0x%08x MOD=0x%08x DPLL2=0x%08x DPLL3=0x%08x DPLL4=0x%08x\n",
-			 pll_rr(adev, AR934X_PLL_AUDIO_CONFIG_REG),
-			 pll_rr(adev, AR934X_PLL_AUDIO_MOD_REG),
-			 dpll_rr(adev, AR934X_DPLL_REG_2),
-			 dpll_rr(adev, AR934X_DPLL_REG_3),
-			 dpll_rr(adev, AR934X_DPLL_REG_4));
 
 		while (!dpll_meas_done(adev) && --meas_timeout > 0)
 			udelay(10);
 
-		dev_info(adev->dev,
-			 "after poll: DPLL4=0x%08x timeout_left=%d\n",
-			 dpll_rr(adev, AR934X_DPLL_REG_4), meas_timeout);
-
-		/* If the DPLL measurement hardware is unresponsive (DPLL4
-		 * MEAS_DONE never fires), fall through anyway — the PLL tables
-		 * are derived from the reference crystal and should be correct
-		 * without closed-loop verification. */
+		/* DPLL4 MEAS_DONE nooit actief op deze hardware; tabellen zijn
+		 * exact genoeg zonder gesloten-lus verificatie. */
 		if (!meas_timeout)
 			dev_warn(adev->dev, "DPLL measurement timeout — continuing\n");
 

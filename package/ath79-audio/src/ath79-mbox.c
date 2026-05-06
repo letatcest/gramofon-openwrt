@@ -40,17 +40,13 @@ void ath79_mbox_fifo_reset(struct ath79_i2s_dev *adev, u32 mask)
 
 void ath79_mbox_interrupt_enable(struct ath79_i2s_dev *adev, u32 mask)
 {
-	u32 before, to_write, after;
+	u32 t;
 
 	spin_lock(&ath79_mbox_lock);
-	before = dma_rr(adev, AR934X_DMA_REG_MBOX_INT_ENABLE);
-	to_write = before | mask;
-	dma_wr(adev, AR934X_DMA_REG_MBOX_INT_ENABLE, to_write);
-	after = dma_rr(adev, AR934X_DMA_REG_MBOX_INT_ENABLE);
+	t = dma_rr(adev, AR934X_DMA_REG_MBOX_INT_ENABLE);
+	t |= mask;
+	dma_wr(adev, AR934X_DMA_REG_MBOX_INT_ENABLE, t);
 	spin_unlock(&ath79_mbox_lock);
-
-	pr_alert("ath79 INT_ENABLE mask=0x%08x before=0x%08x wrote=0x%08x after=0x%08x\n",
-		 mask, before, to_write, after);
 }
 
 void ath79_mbox_interrupt_ack(struct ath79_i2s_dev *adev, u32 mask)
@@ -70,17 +66,10 @@ void ath79_mbox_interrupt_ack(struct ath79_i2s_dev *adev, u32 mask)
 void ath79_mbox_dma_start(struct ath79_i2s_dev *adev,
 			  struct ath79_pcm_rt_priv *rtpriv)
 {
-	/*
-	 * AR9341 MBOX naming from the MBOX controller's perspective:
-	 *   RX DMA = MBOX receives from host memory → FIFO → I2S (playback)
-	 *   TX DMA = MBOX transmits from I2S → FIFO → host memory (capture)
-	 */
 	if (rtpriv->direction == SNDRV_PCM_STREAM_PLAYBACK) {
 		dma_wr(adev, AR934X_DMA_REG_MBOX0_DMA_RX_CONTROL,
 		       AR934X_DMA_MBOX_DMA_CONTROL_START);
-		pr_alert("ath79 dma_start: RX_CONTROL wrote START, rb=0x%08x INT_EN=0x%08x\n",
-			 dma_rr(adev, AR934X_DMA_REG_MBOX0_DMA_RX_CONTROL),
-			 dma_rr(adev, AR934X_DMA_REG_MBOX_INT_ENABLE));
+		dma_rr(adev, AR934X_DMA_REG_MBOX0_DMA_RX_CONTROL);
 	} else {
 		dma_wr(adev, AR934X_DMA_REG_MBOX0_DMA_TX_CONTROL,
 		       AR934X_DMA_MBOX_DMA_CONTROL_START);
@@ -91,10 +80,6 @@ void ath79_mbox_dma_start(struct ath79_i2s_dev *adev,
 void ath79_mbox_dma_stop(struct ath79_i2s_dev *adev,
 			 struct ath79_pcm_rt_priv *rtpriv)
 {
-	/* Disable all interrupts first to prevent ISR from issuing RESUME
-	 * after STOP, which would cause DMA to run with freed descriptors. */
-	dma_wr(adev, AR934X_DMA_REG_MBOX_INT_ENABLE, 0);
-
 	if (rtpriv->direction == SNDRV_PCM_STREAM_PLAYBACK) {
 		dma_wr(adev, AR934X_DMA_REG_MBOX0_DMA_RX_CONTROL,
 		       AR934X_DMA_MBOX_DMA_CONTROL_STOP);
@@ -103,6 +88,28 @@ void ath79_mbox_dma_stop(struct ath79_i2s_dev *adev,
 		dma_wr(adev, AR934X_DMA_REG_MBOX0_DMA_TX_CONTROL,
 		       AR934X_DMA_MBOX_DMA_CONTROL_STOP);
 		dma_rr(adev, AR934X_DMA_REG_MBOX0_DMA_TX_CONTROL);
+	}
+	/*
+	 * Wait long enough for the DMA engine to finish the current
+	 * transfer.  delay_time is calculated from sample rate + margin.
+	 */
+	mdelay(rtpriv->delay_time);
+	{
+		struct ath79_pcm_desc *desc;
+		int own0 = 0, own1 = 0;
+
+		list_for_each_entry(desc, &rtpriv->dma_head, list) {
+			if (desc->OWN == 0)
+				own0++;
+			else
+				own1++;
+		}
+		pr_alert("ath79 stop: intst=%08x inten=%08x rx1c=%08x tx24=%08x fifo08=%08x own0=%d own1=%d\n",
+			 dma_rr(adev, AR934X_DMA_REG_MBOX_INT_STATUS),
+			 dma_rr(adev, AR934X_DMA_REG_MBOX_INT_ENABLE),
+			 dma_rr(adev, AR934X_DMA_REG_MBOX0_DMA_RX_CONTROL),
+			 dma_rr(adev, AR934X_DMA_REG_MBOX0_DMA_TX_CONTROL),
+			 dma_rr(adev, AR934X_DMA_REG_MBOX_FIFO_STATUS), own0, own1);
 	}
 }
 
@@ -122,6 +129,12 @@ void ath79_mbox_dma_prepare(struct ath79_i2s_dev *adev,
 {
 	struct ath79_pcm_desc *desc;
 	u32 t;
+
+	/* MISC_INT_STATUS snapshot BEFORE clearing anything — shows state after previous run */
+	pr_alert("ath79 prepare MISC: st=%08x en=%08x dma_st=%08x\n",
+		 __raw_readl(adev->misc_base + 0x00),
+		 __raw_readl(adev->misc_base + 0x04),
+		 dma_rr(adev, AR934X_DMA_REG_MBOX_INT_STATUS));
 
 	/* Full register dump of MBOX DMA space to verify layout */
 	pr_alert("ath79 DMA-A: 04=%08x 08=%08x 0c=%08x 10=%08x 14=%08x 18=%08x\n",
@@ -147,34 +160,22 @@ void ath79_mbox_dma_prepare(struct ath79_i2s_dev *adev,
 	 * Only clear known W1C bits — writing BIT(0)/BIT(2) (FIFO threshold
 	 * status, always set) has unknown side-effects. */
 	dma_wr(adev, AR934X_DMA_REG_MBOX_INT_ENABLE, 0);
-	dma_wr(adev, AR934X_DMA_REG_MBOX_INT_STATUS,
-	       AR934X_DMA_MBOX0_INT_TX_COMPLETE |
-	       AR934X_DMA_MBOX0_INT_RX_COMPLETE);
 
 	if (rtpriv->direction == SNDRV_PCM_STREAM_PLAYBACK) {
 		t = dma_rr(adev, AR934X_DMA_REG_MBOX_DMA_POLICY);
 		dma_wr(adev, AR934X_DMA_REG_MBOX_DMA_POLICY,
-		       t | AR934X_DMA_MBOX_DMA_POLICY_RX_QUANTUM |
-		       (6 << AR934X_DMA_MBOX_DMA_POLICY_TX_FIFO_THRESH_SHIFT));
+		       t | (6 << AR934X_DMA_MBOX_DMA_POLICY_TX_FIFO_THRESH_SHIFT));
 
 		desc = list_first_entry(&rtpriv->dma_head,
 					struct ath79_pcm_desc, list);
 		dma_wr(adev, AR934X_DMA_REG_MBOX0_DMA_RX_DESCRIPTOR_BASE,
 		       (u32)desc->phys);
-		pr_alert("ath79 prepare RX: pol_b=0x%08x pol_a=0x%08x base=0x%08x rb=0x%08x w0=0x%08x w1=0x%08x w2=0x%08x stereo=0x%08x\n",
-			 t,
-			 dma_rr(adev, AR934X_DMA_REG_MBOX_DMA_POLICY),
-			 (u32)desc->phys,
-			 dma_rr(adev, AR934X_DMA_REG_MBOX0_DMA_RX_DESCRIPTOR_BASE),
-			 ((u32 *)desc)[0], ((u32 *)desc)[1], ((u32 *)desc)[2],
-			 stereo_rr(adev, AR934X_STEREO_REG_CONFIG));
 		ath79_mbox_interrupt_enable(adev,
 					    AR934X_DMA_MBOX0_INT_RX_COMPLETE);
 	} else {
 		t = dma_rr(adev, AR934X_DMA_REG_MBOX_DMA_POLICY);
 		dma_wr(adev, AR934X_DMA_REG_MBOX_DMA_POLICY,
-		       t | AR934X_DMA_MBOX_DMA_POLICY_TX_QUANTUM |
-		       (6 << AR934X_DMA_MBOX_DMA_POLICY_TX_FIFO_THRESH_SHIFT));
+		       t | (6 << AR934X_DMA_MBOX_DMA_POLICY_TX_FIFO_THRESH_SHIFT));
 
 		desc = list_first_entry(&rtpriv->dma_head,
 					struct ath79_pcm_desc, list);
@@ -203,7 +204,7 @@ int ath79_mbox_dma_map(struct ath79_pcm_rt_priv *rtpriv,
 		desc->phys = desc_p;
 		list_add_tail(&desc->list, &rtpriv->dma_head);
 
-		desc->OWN = 1;
+		desc->OWN = 1;	/* OWN=1: hardware owns/must process */
 		desc->EOM = 0;
 		desc->rsvd1 = desc->rsvd2 = desc->rsvd3 = 0;
 
@@ -227,8 +228,14 @@ int ath79_mbox_dma_map(struct ath79_pcm_rt_priv *rtpriv,
 	prev  = list_entry(rtpriv->dma_head.prev,   struct ath79_pcm_desc, list);
 	prev->NextPtr = desc->phys;
 
-	pr_alert("ath79 dma_map: period=%u buf=%u ndesc=%u\n",
-		 period_bytes, bufsize, bufsize / period_bytes);
+	/* DIAG: verify bitfield layout — OWN=1,EOM=0,size=period_bytes,BufPtr=baseaddr
+	 * Correct (OWN at bit 31): w0=0x80???000, w1=baseaddr
+	 * Reversed (OWN at bit 0): w0=0x???00001, w1=baseaddr<<4 */
+	{
+		u32 *raw = (u32 *)desc;
+		pr_alert("desc raw: w0=%08x w1=%08x w2=%08x phys=%08x bufptr=%08x\n",
+			 raw[0], raw[1], raw[2], (u32)desc->phys, (u32)desc->BufPtr);
+	}
 
 	return 0;
 }

@@ -18,13 +18,12 @@
 #include <linux/clk.h>
 #include <linux/reset.h>
 #include <linux/delay.h>
-#include <linux/atomic.h>
 #include <linux/dma-mapping.h>
 #include <linux/dmapool.h>
 #include <linux/interrupt.h>
 #include <linux/io.h>
-#include <linux/workqueue.h>
 #include <linux/slab.h>
+#include <linux/workqueue.h>
 #include <sound/core.h>
 #include <sound/soc.h>
 #include <sound/soc-dai.h>
@@ -111,8 +110,8 @@ static int ath79_i2s_startup(struct snd_pcm_substream *ss,
 
 	if (!snd_soc_dai_active(dai)) {
 		stereo_wr(adev, AR934X_STEREO_REG_CONFIG,
-			  AR934X_STEREO_CONFIG_SPDIF_ENABLE |
 			  AR934X_STEREO_CONFIG_I2S_ENABLE   |
+			  AR934X_STEREO_CONFIG_I2S_DELAY     |
 			  AR934X_STEREO_CONFIG_SAMPLE_CNT_CLEAR_TYPE |
 			  AR934X_STEREO_CONFIG_MASTER);
 		ath79_stereo_reset(adev);
@@ -220,7 +219,8 @@ static struct snd_soc_dai_driver ath79_i2s_dai = {
 static const struct snd_pcm_hardware ath79_pcm_hardware = {
 	.info           = SNDRV_PCM_INFO_MMAP        |
 			  SNDRV_PCM_INFO_MMAP_VALID  |
-			  SNDRV_PCM_INFO_INTERLEAVED,
+			  SNDRV_PCM_INFO_INTERLEAVED |
+			  SNDRV_PCM_INFO_NO_PERIOD_WAKEUP,
 	.formats        = SNDRV_PCM_FMTBIT_S8    |
 			  SNDRV_PCM_FMTBIT_S16_BE | SNDRV_PCM_FMTBIT_S16_LE |
 			  SNDRV_PCM_FMTBIT_S24_BE | SNDRV_PCM_FMTBIT_S24_LE |
@@ -240,19 +240,42 @@ static const struct snd_pcm_hardware ath79_pcm_hardware = {
 	.fifo_size      = 0,
 };
 
-/* ── DMA diagnostic poll (delayed work) ─────────────────────────────── */
+/* ── DMA poll worker (diagnostic) ───────────────────────────────────── */
 
-static void ath79_dma_poll_fn(struct work_struct *work)
+static void ath79_poll_worker(struct work_struct *work)
 {
 	struct ath79_i2s_dev *adev =
-		container_of(work, struct ath79_i2s_dev, dma_poll_work.work);
-	u32 st  = dma_rr(adev, AR934X_DMA_REG_MBOX_INT_STATUS);
-	u32 en  = dma_rr(adev, AR934X_DMA_REG_MBOX_INT_ENABLE);
-	u32 d64 = dma_rr(adev, 0x64);
-	u32 d68 = dma_rr(adev, 0x68);
+		container_of(work, struct ath79_i2s_dev, poll_work.work);
+	struct ath79_pcm_pltfm_priv *prdata = &adev->pcm_priv;
+	struct ath79_pcm_rt_priv *rtpriv;
+	struct ath79_pcm_desc *desc;
+	int own0 = 0, own1 = 0;
 
-	pr_alert("ath79 dma_poll: st=%08x en=%08x 0x64=%08x 0x68=%08x irqs=%d\n",
-		 st, en, d64, d68, atomic_read(&adev->irq_count));
+	if (prdata->playback && prdata->playback->runtime) {
+		rtpriv = prdata->playback->runtime->private_data;
+		if (rtpriv) {
+			list_for_each_entry(desc, &rtpriv->dma_head, list) {
+				if (desc->OWN == 0)
+					own0++;
+				else
+					own1++;
+			}
+		}
+	}
+
+	pr_alert("ath79 poll: isr=%d lstatus=%08x ldesc64=%08x intst=%08x inten=%08x txctl=%08x fifo08=%08x desc64=%08x own0=%d own1=%d\n",
+		 atomic_read(&adev->isr_count),
+		 adev->last_status,
+		 adev->last_desc64,
+		 dma_rr(adev, AR934X_DMA_REG_MBOX_INT_STATUS),
+		 dma_rr(adev, AR934X_DMA_REG_MBOX_INT_ENABLE),
+		 dma_rr(adev, AR934X_DMA_REG_MBOX0_DMA_TX_CONTROL),
+		 dma_rr(adev, AR934X_DMA_REG_MBOX_FIFO_STATUS),
+		 dma_rr(adev, 0x64),
+		 own0, own1);
+
+	if (adev->poll_active)
+		schedule_delayed_work(&adev->poll_work, msecs_to_jiffies(100));
 }
 
 /* ── DMA interrupt handler ───────────────────────────────────────────── */
@@ -265,26 +288,23 @@ static irqreturn_t ath79_pcm_interrupt(int irq, void *dev_id)
 	u32 status;
 	unsigned int period_bytes, played_size;
 
-	atomic_inc(&adev->irq_count);
 	status = dma_rr(adev, AR934X_DMA_REG_MBOX_INT_STATUS);
+	atomic_inc(&adev->isr_count);
+	adev->last_status = status;
+	adev->last_desc64 = dma_rr(adev, 0x64);
 
-	/* RX complete = memory→FIFO done = playback period done */
 	if (status & AR934X_DMA_MBOX_INT_STATUS_RX_DMA_COMPLETE) {
+		/* MBOX RX = DDR→I2S FIFO = playback */
+		ath79_mbox_interrupt_ack(adev,
+					 AR934X_DMA_MBOX_INT_STATUS_RX_DMA_COMPLETE);
 		if (prdata->playback) {
 			rtpriv = prdata->playback->runtime->private_data;
 			rtpriv->last_played = ath79_pcm_get_last_played(rtpriv);
 			period_bytes = snd_pcm_lib_period_bytes(prdata->playback);
 			played_size  = ath79_pcm_set_own_bits(rtpriv);
+			dma_wr(adev, AR934X_DMA_REG_MBOX0_DMA_RX_CONTROL,
+			       AR934X_DMA_MBOX_DMA_CONTROL_RESUME);
 			rtpriv->elapsed_size += played_size;
-			pr_alert("ath79 RX isr#%d st=%08x en=%08x played=%u el=%u per=%u lp=%p\n",
-				 atomic_read(&adev->irq_count), status,
-				 dma_rr(adev, AR934X_DMA_REG_MBOX_INT_ENABLE),
-				 played_size, rtpriv->elapsed_size,
-				 period_bytes, rtpriv->last_played);
-			ath79_mbox_interrupt_ack(adev,
-						 AR934X_DMA_MBOX_INT_STATUS_RX_DMA_COMPLETE);
-			/* No RESUME needed: set_own_bits writes OWN=1 on the
-			 * stalled descriptor, which auto-kicks DMA hardware. */
 			if (rtpriv->elapsed_size >= period_bytes) {
 				rtpriv->elapsed_size %= period_bytes;
 				snd_pcm_period_elapsed(prdata->playback);
@@ -292,14 +312,16 @@ static irqreturn_t ath79_pcm_interrupt(int irq, void *dev_id)
 		}
 	}
 
-	/* TX complete = FIFO→memory done = capture period done */
 	if (status & AR934X_DMA_MBOX_INT_STATUS_TX_DMA_COMPLETE) {
+		/* MBOX TX = I2S FIFO→DDR = capture */
+		ath79_mbox_interrupt_ack(adev,
+					 AR934X_DMA_MBOX_INT_STATUS_TX_DMA_COMPLETE);
 		if (prdata->capture) {
 			rtpriv = prdata->capture->runtime->private_data;
 			rtpriv->last_played = ath79_pcm_get_last_played(rtpriv);
 			ath79_pcm_set_own_bits(rtpriv);
-			ath79_mbox_interrupt_ack(adev,
-						 AR934X_DMA_MBOX_INT_STATUS_TX_DMA_COMPLETE);
+			dma_wr(adev, AR934X_DMA_REG_MBOX0_DMA_TX_CONTROL,
+			       AR934X_DMA_MBOX_DMA_CONTROL_RESUME);
 			snd_pcm_period_elapsed(prdata->capture);
 		}
 	}
@@ -392,11 +414,8 @@ static int ath79_pcm_prepare(struct snd_soc_component *component,
 {
 	struct ath79_i2s_dev *adev = ath79_i2s_dev_g;
 	struct ath79_pcm_rt_priv *rtpriv = ss->runtime->private_data;
-	struct snd_soc_pcm_runtime *rtd = asoc_substream_to_rtd(ss);
 
-	if (snd_soc_dai_active(asoc_rtd_to_cpu(rtd, 0)) == 1)
-		ath79_mbox_dma_reset(adev);
-
+	ath79_mbox_dma_reset(adev);
 	ath79_mbox_dma_prepare(adev, rtpriv);
 	ath79_pcm_set_own_bits(rtpriv);
 	rtpriv->last_played = NULL;
@@ -411,11 +430,25 @@ static int ath79_pcm_trigger(struct snd_soc_component *component,
 
 	switch (cmd) {
 	case SNDRV_PCM_TRIGGER_START:
+		pr_alert("ath79 START: stereo=%08x mclk=%08x gpio_oe=%08x gf3c=%08x gf40=%08x inten=%08x pll30=%08x dpll4=%08x\n",
+			 stereo_rr(adev, AR934X_STEREO_REG_CONFIG),
+			 stereo_rr(adev, AR934X_STEREO_REG_MASTER_CLOCK),
+			 __raw_readl(adev->gpio_base + 0x00),
+			 __raw_readl(adev->gpio_base + 0x3c),
+			 __raw_readl(adev->gpio_base + 0x40),
+			 dma_rr(adev, AR934X_DMA_REG_MBOX_INT_ENABLE),
+			 pll_rr(adev, AR934X_PLL_AUDIO_CONFIG_REG),
+			 dpll_rr(adev, AR934X_DPLL_REG_4));
+		atomic_set(&adev->isr_count, 0);
+		adev->last_status = 0;
+		adev->last_desc64 = 0;
+		adev->poll_active = true;
+		schedule_delayed_work(&adev->poll_work, msecs_to_jiffies(100));
 		ath79_mbox_dma_start(adev, rtpriv);
-		schedule_delayed_work(&adev->dma_poll_work, msecs_to_jiffies(200));
 		break;
 	case SNDRV_PCM_TRIGGER_STOP:
-		cancel_delayed_work(&adev->dma_poll_work);
+		adev->poll_active = false;
+		cancel_delayed_work(&adev->poll_work);
 		ath79_mbox_dma_stop(adev, rtpriv);
 		break;
 	default:
@@ -441,7 +474,6 @@ static int ath79_pcm_mmap(struct snd_soc_component *component,
 			  struct snd_pcm_substream *ss,
 			  struct vm_area_struct *vma)
 {
-	vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
 	return remap_pfn_range(vma, vma->vm_start,
 			       ss->dma_buffer.addr >> PAGE_SHIFT,
 			       vma->vm_end - vma->vm_start,
@@ -536,6 +568,8 @@ static const struct snd_soc_component_driver ath79_i2s_component = {
  */
 #define AR9341_GPIO_BASE	0x18040000UL
 #define AR9341_PLL_BASE		0x18050000UL
+#define AR9341_MISC_BASE	0x18060010UL  /* MISC_INT_STATUS (r/o), +4 = MISC_INT_ENABLE */
+#define AR9341_RST_REG		0x1806001cUL  /* RESET register; BIT(10)=HOST_DMA_INT */
 
 static int ath79_i2s_probe(struct platform_device *pdev)
 {
@@ -552,8 +586,6 @@ static int ath79_i2s_probe(struct platform_device *pdev)
 	adev->dev = dev;
 	spin_lock_init(&adev->stereo_lock);
 	spin_lock_init(&adev->pll_lock);
-	atomic_set(&adev->irq_count, 0);
-	INIT_DELAYED_WORK(&adev->dma_poll_work, ath79_dma_poll_fn);
 
 	/*
 	 * Unique regions — claim via platform resource (exclusive).
@@ -570,10 +602,6 @@ static int ath79_i2s_probe(struct platform_device *pdev)
 	adev->dpll_base = devm_platform_ioremap_resource_byname(pdev, "dpll");
 	if (IS_ERR(adev->dpll_base))
 		return PTR_ERR(adev->dpll_base);
-
-	dev_info(dev, "probe: INT_ENABLE at boot=0x%08x INT_STATUS=0x%08x\n",
-		 dma_rr(adev, AR934X_DMA_REG_MBOX_INT_ENABLE),
-		 dma_rr(adev, AR934X_DMA_REG_MBOX_INT_STATUS));
 
 	/*
 	 * Shared regions — use devm_ioremap (no resource claiming) to avoid
@@ -593,11 +621,20 @@ static int ath79_i2s_probe(struct platform_device *pdev)
 		return -ENOMEM;
 	}
 
-	adev->gpio_base = devm_ioremap(dev, AR9341_GPIO_BASE, 0x48);
+	adev->gpio_base = devm_ioremap(dev, AR9341_GPIO_BASE, 0x80);
 	if (!adev->gpio_base) {
 		dev_err(dev, "cannot map GPIO registers\n");
 		return -ENOMEM;
 	}
+
+	adev->misc_base = devm_ioremap(dev, AR9341_MISC_BASE, 0x08);
+	if (!adev->misc_base) {
+		dev_err(dev, "cannot map MISC registers\n");
+		return -ENOMEM;
+	}
+
+	/* RST_REG block disabled for test: check if deassert of BIT(29)/BIT(10)
+	 * was causing DMA regression rather than fixing interrupts. */
 
 	/* IRQ */
 	adev->irq = platform_get_irq(pdev, 0);
@@ -609,11 +646,6 @@ static int ath79_i2s_probe(struct platform_device *pdev)
 	if (IS_ERR(adev->ref_clk)) {
 		dev_err(dev, "cannot get ref clock\n");
 		return PTR_ERR(adev->ref_clk);
-	}
-	ret = clk_prepare_enable(adev->ref_clk);
-	if (ret) {
-		dev_err(dev, "cannot enable ref clock: %d\n", ret);
-		return ret;
 	}
 
 	/* GPIO pin assignments from DTS */
@@ -650,6 +682,8 @@ static int ath79_i2s_probe(struct platform_device *pdev)
 		return ret;
 	}
 
+	INIT_DELAYED_WORK(&adev->poll_work, ath79_poll_worker);
+
 	platform_set_drvdata(pdev, adev);
 	ath79_i2s_dev_g = adev;
 
@@ -669,10 +703,6 @@ static int ath79_i2s_probe(struct platform_device *pdev)
 
 static int ath79_i2s_remove(struct platform_device *pdev)
 {
-	struct ath79_i2s_dev *adev = platform_get_drvdata(pdev);
-
-	if (adev && !IS_ERR_OR_NULL(adev->ref_clk))
-		clk_disable_unprepare(adev->ref_clk);
 	ath79_i2s_dev_g = NULL;
 	return 0;
 }

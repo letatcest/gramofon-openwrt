@@ -9,10 +9,12 @@
 #ifndef _ATH79_I2S_H_
 #define _ATH79_I2S_H_
 
+#include <linux/atomic.h>
 #include <linux/spinlock.h>
 #include <linux/list.h>
 #include <linux/clk.h>
 #include <linux/reset.h>
+#include <linux/workqueue.h>
 #include <sound/soc.h>
 
 /* ── Register offsets ─────────────────────────────────────────────────── */
@@ -137,6 +139,7 @@ struct ath79_i2s_dev {
 	void __iomem		*pll_base;	 /* devm_ioremap, no resource claim */
 	void __iomem		*dpll_base;
 	void __iomem		*gpio_base;	 /* devm_ioremap, no resource claim */
+	void __iomem		*misc_base;	 /* MISC IRQ controller at 0x18060010 */
 
 	u32			gpio_mclk;
 	u32			gpio_bick;
@@ -149,8 +152,14 @@ struct ath79_i2s_dev {
 	spinlock_t		stereo_lock;
 	spinlock_t		pll_lock;
 
-	atomic_t		irq_count;
-	struct delayed_work	dma_poll_work;
+	struct delayed_work	poll_work;
+	int			poll_count;
+	bool			poll_active;
+
+	/* ISR → poll diagnostic channel (written in IRQ context, read in process context) */
+	atomic_t		isr_count;
+	u32			last_desc64;
+	u32			last_status;
 
 	/*
 	 * PCM per-card state embedded here so the ISR and component ops can
@@ -241,7 +250,7 @@ ath79_pcm_set_own_bits(struct ath79_pcm_rt_priv *rtpriv)
 
 	list_for_each_entry(desc, &rtpriv->dma_head, list) {
 		if (desc->OWN == 0) {
-			desc->OWN = 1;
+			desc->OWN = 1;	/* give back to hardware */
 			size_played += desc->size;
 		}
 	}
