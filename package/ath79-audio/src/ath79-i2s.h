@@ -9,7 +9,6 @@
 #ifndef _ATH79_I2S_H_
 #define _ATH79_I2S_H_
 
-#include <linux/atomic.h>
 #include <linux/spinlock.h>
 #include <linux/list.h>
 #include <linux/clk.h>
@@ -50,21 +49,24 @@
 #define AR934X_DMA_REG_MBOX_FIFO		0x00
 #define AR934X_DMA_REG_MBOX_FIFO_STATUS		0x08
 #define AR934X_DMA_REG_MBOX_DMA_POLICY		0x10
-#define AR934X_DMA_MBOX_DMA_POLICY_RX_QUANTUM	BIT(1)
-#define AR934X_DMA_MBOX_DMA_POLICY_TX_QUANTUM	BIT(0)
+#define AR934X_DMA_MBOX_DMA_POLICY_RX_FIFO_THRESH_SHIFT 12
 #define AR934X_DMA_MBOX_DMA_POLICY_TX_FIFO_THRESH_SHIFT 4
+#define AR934X_DMA_MBOX_DMA_POLICY_TX_QUANTUM	BIT(3)
+#define AR934X_DMA_MBOX_DMA_POLICY_RX_QUANTUM	BIT(1)
 
 #define AR934X_DMA_REG_MBOX0_DMA_RX_DESCRIPTOR_BASE 0x18
 #define AR934X_DMA_REG_MBOX0_DMA_RX_CONTROL	0x1c
 #define AR934X_DMA_REG_MBOX0_DMA_TX_DESCRIPTOR_BASE 0x20
 #define AR934X_DMA_REG_MBOX0_DMA_TX_CONTROL	0x24
-#define AR934X_DMA_MBOX_DMA_CONTROL_START	BIT(0)
-#define AR934X_DMA_MBOX_DMA_CONTROL_STOP	BIT(1)
+/* Bitposities conform QCA-referentie (ar71xx_regs.h uit QSDK):
+ * STOP=BIT(0), START=BIT(1) — eerder stonden deze omgewisseld. */
+#define AR934X_DMA_MBOX_DMA_CONTROL_STOP	BIT(0)
+#define AR934X_DMA_MBOX_DMA_CONTROL_START	BIT(1)
 #define AR934X_DMA_MBOX_DMA_CONTROL_RESUME	BIT(2)
 
 #define AR934X_DMA_REG_MBOX_FIFO_RESET		0x58
-#define AR934X_DMA_MBOX0_FIFO_RESET_RX		BIT(0)
-#define AR934X_DMA_MBOX0_FIFO_RESET_TX		BIT(4)
+#define AR934X_DMA_MBOX0_FIFO_RESET_RX		BIT(2)
+#define AR934X_DMA_MBOX0_FIFO_RESET_TX		BIT(0)
 
 #define AR934X_DMA_REG_MBOX_INT_STATUS		0x44
 #define AR934X_DMA_REG_MBOX_INT_ENABLE		0x4c
@@ -74,6 +76,7 @@
 #define AR934X_DMA_MBOX_INT_STATUS_TX_DMA_COMPLETE BIT(6)
 
 /* Reset module register (offset from base 0x18060000) — used via reset framework */
+#define AR934X_RESET_REG_RESET_MODULE		0x1c
 #define AR934X_RESET_MBOX			BIT(1)
 #define AR934X_RESET_I2S			BIT(0)
 
@@ -85,29 +88,32 @@
 #define AR934X_PLL_AUDIO_CONFIG_POSTPLLPWD_SHIFT 7
 #define AR934X_PLL_AUDIO_CONFIG_POSTPLLPWD_MASK 0x7
 #define AR934X_PLL_AUDIO_CONFIG_REFDIV_SHIFT	0
-#define AR934X_PLL_AUDIO_CONFIG_REFDIV_MASK	0x1f
+#define AR934X_PLL_AUDIO_CONFIG_REFDIV_MASK	0xf
+#define AR934X_PLL_AUDIO_CONFIG_BYPASS		BIT(4)
 #define AR934X_PLL_AUDIO_CONFIG_PLLPWD		BIT(5)
-#define AR934X_PLL_AUDIO_CONFIG_BYPASS		BIT(6)
-#define AR934X_PLL_AUDIO_MOD_TGT_DIV_FRAC_SHIFT 0
+/* MOD-register layout conform QCA-referentie: INT op bits 6:1, FRAC op 28:11 */
+#define AR934X_PLL_AUDIO_MOD_TGT_DIV_FRAC_SHIFT 11
 #define AR934X_PLL_AUDIO_MOD_TGT_DIV_FRAC_MASK	0x3ffff  /* 18 bits */
-#define AR934X_PLL_AUDIO_MOD_TGT_DIV_INT_SHIFT	18
+#define AR934X_PLL_AUDIO_MOD_TGT_DIV_INT_SHIFT	1
 #define AR934X_PLL_AUDIO_MOD_TGT_DIV_INT_MASK	0x3f
 
-/* Audio DPLL registers (offset from dpll_base 0x18116200) */
+/* Audio DPLL registers (offset from dpll_base 0x18116200)
+ * Bitposities conform QCA-referentie (ar71xx_regs.h uit QSDK). */
+#define AR934X_DPLL_REG_1			0x00
 #define AR934X_DPLL_REG_2			0x04
 #define AR934X_DPLL_REG_3			0x08
 #define AR934X_DPLL_REG_4			0x0c
-#define AR934X_DPLL_2_KD_SHIFT			10
-#define AR934X_DPLL_2_KD_MASK			0x3f
-#define AR934X_DPLL_2_KI_SHIFT			6
+#define AR934X_DPLL_2_RANGE			BIT(31)
+#define AR934X_DPLL_2_KI_SHIFT			26
 #define AR934X_DPLL_2_KI_MASK			0xf
-#define AR934X_DPLL_2_RANGE			BIT(2)
+#define AR934X_DPLL_2_KD_SHIFT			19
+#define AR934X_DPLL_2_KD_MASK			0x7f
+#define AR934X_DPLL_3_DO_MEAS			BIT(30)
 #define AR934X_DPLL_3_PHASESH_SHIFT		23
-#define AR934X_DPLL_3_PHASESH_MASK		0x3
-#define AR934X_DPLL_3_DO_MEAS			BIT(0)
+#define AR934X_DPLL_3_PHASESH_MASK		0x7f
 #define AR934X_DPLL_3_SQSUM_DVC_SHIFT		3
-#define AR934X_DPLL_3_SQSUM_DVC_MASK		0x7ffff
-#define AR934X_DPLL_4_MEAS_DONE			BIT(0)
+#define AR934X_DPLL_3_SQSUM_DVC_MASK		0xfffff
+#define AR934X_DPLL_4_MEAS_DONE			BIT(3)
 
 /* GPIO OUT FUNCTION registers (offset from gpio_base 0x18040000) */
 #define AR934X_GPIO_OUT_FUNCTION0		0x2c   /* GPIOs  0-3  */
@@ -139,7 +145,7 @@ struct ath79_i2s_dev {
 	void __iomem		*pll_base;	 /* devm_ioremap, no resource claim */
 	void __iomem		*dpll_base;
 	void __iomem		*gpio_base;	 /* devm_ioremap, no resource claim */
-	void __iomem		*misc_base;	 /* MISC IRQ controller at 0x18060010 */
+	void __iomem		*reset_base;	 /* reset module register block */
 
 	u32			gpio_mclk;
 	u32			gpio_bick;
@@ -152,14 +158,10 @@ struct ath79_i2s_dev {
 	spinlock_t		stereo_lock;
 	spinlock_t		pll_lock;
 
-	struct delayed_work	poll_work;
-	int			poll_count;
-	bool			poll_active;
+	atomic_t		irq_count;
 
-	/* ISR → poll diagnostic channel (written in IRQ context, read in process context) */
-	atomic_t		isr_count;
-	u32			last_desc64;
-	u32			last_status;
+	struct delayed_work	poll_work;
+	bool			poll_active;
 
 	/*
 	 * PCM per-card state embedded here so the ISR and component ops can
@@ -241,17 +243,22 @@ int  ath79_audio_set_freq(struct ath79_i2s_dev *adev, int freq);
 /* ath79-i2s-drv.c — stereo block */
 void ath79_stereo_reset(struct ath79_i2s_dev *adev);
 
+#define ATH79_PCM_DESC_OWN	BIT(31)
+#define ATH79_PCM_DESC_SIZE(w)	(((w) >> 12) & 0xfff)
+
 /* Inline helpers for DMA ring management */
 static inline unsigned int
 ath79_pcm_set_own_bits(struct ath79_pcm_rt_priv *rtpriv)
 {
 	struct ath79_pcm_desc *desc;
 	unsigned int size_played = 0;
+	u32 *word;
 
 	list_for_each_entry(desc, &rtpriv->dma_head, list) {
-		if (desc->OWN == 0) {
-			desc->OWN = 1;	/* give back to hardware */
-			size_played += desc->size;
+		word = (u32 *)desc;
+		if (!(*word & ATH79_PCM_DESC_OWN)) {
+			size_played += ATH79_PCM_DESC_SIZE(*word);
+			*word |= ATH79_PCM_DESC_OWN;
 		}
 	}
 	return size_played;
@@ -261,10 +268,14 @@ static inline struct ath79_pcm_desc *
 ath79_pcm_get_last_played(struct ath79_pcm_rt_priv *rtpriv)
 {
 	struct ath79_pcm_desc *desc, *prev;
+	u32 *desc_word, *prev_word;
 
 	prev = list_entry(rtpriv->dma_head.prev, struct ath79_pcm_desc, list);
 	list_for_each_entry(desc, &rtpriv->dma_head, list) {
-		if (desc->OWN == 1 && prev->OWN == 0)
+		desc_word = (u32 *)desc;
+		prev_word = (u32 *)prev;
+		if ((*desc_word & ATH79_PCM_DESC_OWN) &&
+		    !(*prev_word & ATH79_PCM_DESC_OWN))
 			return desc;
 		prev = desc;
 	}

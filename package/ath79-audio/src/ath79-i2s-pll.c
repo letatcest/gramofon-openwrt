@@ -32,13 +32,24 @@ struct ath79_pll_config {
 	u32 shift;
 };
 
+/*
+ * MCLK-ratio aangepast voor de AK4430: die accepteert in Normal Speed Mode
+ * (t/m 48 kHz) alleen 512fs/768fs/1152fs — géén 256fs zoals de originele
+ * QCA-tabel levert.  Daarom extdiv 6→3 (MCLK ×2 = 512fs) en posedge ×2
+ * zodat BICK op 64fs blijft.  88.2/96 kHz (Double Speed) mag wél 256fs.
+ */
 static const struct ath79_pll_config pll_cfg_25MHz[] = {
-	{ 22050, 0x15, 0x2B442, 0x3, 0, 0x6, 0x1, 3, 0x4, 0x3d, 0x6 },
-	{ 32000, 0x17, 0x24F76, 0x3, 0, 0x6, 0x1, 3, 0x4, 0x3d, 0x6 },
-	{ 44100, 0x15, 0x2B442, 0x3, 0, 0x6, 0x1, 2, 0x4, 0x3d, 0x6 },
-	{ 48000, 0x17, 0x24F76, 0x3, 0, 0x6, 0x1, 2, 0x4, 0x3d, 0x6 },
-	{ 88200, 0x15, 0x2B442, 0x3, 0, 0x6, 0x1, 1, 0x4, 0x3d, 0x6 },
-	{ 96000, 0x17, 0x24F76, 0x3, 0, 0x6, 0x1, 1, 0x4, 0x3d, 0x6 },
+	/* rate: extdiv/posedge → MCLK-ratio, BICK altijd 64fs */
+	{ 22050, 0x15, 0x2B442, 0x3, 0, 0x6, 0x1, 4, 0x4, 0x3d, 0x6 }, /* 512fs */
+	{ 32000, 0x17, 0x24F76, 0x3, 0, 0x3, 0x1, 6, 0x4, 0x3d, 0x6 }, /* 768fs */
+	/* 44.1k-familie: VCO 541,9 MHz (divint 0x15) geeft op de AR9341 een
+	 * instabiele klok (DAC-ratio-detect flipt, "motorgeluid") hoewel hij
+	 * binnen het 400-750 MHz-bereik valt.  VCO 722,53 MHz met even
+	 * EXT_DIV=4 (50% duty, vereist per datasheet) is wél stabiel. */
+	{ 44100, 0x1c, 0x39B02, 0x3, 0, 0x4, 0x1, 4, 0x4, 0x3d, 0x6 }, /* 512fs */
+	{ 48000, 0x17, 0x24F76, 0x3, 0, 0x3, 0x1, 4, 0x4, 0x3d, 0x6 }, /* 512fs */
+	{ 88200, 0x15, 0x2B442, 0x3, 0, 0x3, 0x1, 2, 0x4, 0x3d, 0x6 }, /* 256fs */
+	{ 96000, 0x17, 0x24F76, 0x3, 0, 0x3, 0x1, 2, 0x4, 0x3d, 0x6 }, /* 256fs */
 	{ 0,     0,    0,       0,   0, 0,   0,   0, 0,   0,    0   },
 };
 
@@ -296,14 +307,30 @@ int ath79_audio_set_freq(struct ath79_i2s_dev *adev, int freq)
 		stereo_set_posedge(adev, cfg->posedge);
 
 		pll_powerup(adev);
+		/* Give the PLL time to stabilise before triggering measurement */
+		mdelay(10);
 		dpll_do_meas_clear(adev);
 		dpll_do_meas_set(adev);
+
+		dev_info(adev->dev,
+			 "PLL CFG=0x%08x MOD=0x%08x DPLL2=0x%08x DPLL3=0x%08x DPLL4=0x%08x\n",
+			 pll_rr(adev, AR934X_PLL_AUDIO_CONFIG_REG),
+			 pll_rr(adev, AR934X_PLL_AUDIO_MOD_REG),
+			 dpll_rr(adev, AR934X_DPLL_REG_2),
+			 dpll_rr(adev, AR934X_DPLL_REG_3),
+			 dpll_rr(adev, AR934X_DPLL_REG_4));
 
 		while (!dpll_meas_done(adev) && --meas_timeout > 0)
 			udelay(10);
 
-		/* DPLL4 MEAS_DONE nooit actief op deze hardware; tabellen zijn
-		 * exact genoeg zonder gesloten-lus verificatie. */
+		dev_info(adev->dev,
+			 "after poll: DPLL4=0x%08x timeout_left=%d\n",
+			 dpll_rr(adev, AR934X_DPLL_REG_4), meas_timeout);
+
+		/* If the DPLL measurement hardware is unresponsive (DPLL4
+		 * MEAS_DONE never fires), fall through anyway — the PLL tables
+		 * are derived from the reference crystal and should be correct
+		 * without closed-loop verification. */
 		if (!meas_timeout)
 			dev_warn(adev->dev, "DPLL measurement timeout — continuing\n");
 
