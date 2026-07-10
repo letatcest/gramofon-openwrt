@@ -63,6 +63,15 @@ static const struct ath79_pll_config pll_cfg_40MHz[] = {
 	{ 0,     0,    0,       0,   0, 0,   0,   0, 0,   0,    0   },
 };
 
+/* Runtime-schakelbare 44,1kHz-variant (A/B-test zonder herbuild):
+ * 0 = VCO 722,53 MHz, postpll /8, extdiv 4 (huidige rij)
+ * 1 = VCO 541,90 MHz, postpll /4, extdiv 6 (bewezen VCO, even extdiv)
+ * 2 = VCO 541,90 MHz, postpll /8, extdiv 3 (QSDK-conform, oneven extdiv)
+ * Alle drie: MCLK = 512fs = 22,5792 MHz, posedge 4 → BICK 64fs. */
+static int pll_44k_variant;
+module_param(pll_44k_variant, int, 0644);
+MODULE_PARM_DESC(pll_44k_variant, "44,1kHz PLL-variant: 0=722M/ext4 1=541M/div4/ext6 2=541M/div8/ext3");
+
 /* ── Low-level PLL register helpers ─────────────────────────────────── */
 
 static void pll_set_target_div(struct ath79_i2s_dev *adev,
@@ -72,10 +81,15 @@ static void pll_set_target_div(struct ath79_i2s_dev *adev,
 
 	spin_lock(&adev->pll_lock);
 	t = pll_rr(adev, AR934X_PLL_AUDIO_MOD_REG);
+	if (t & AR934X_PLL_AUDIO_MOD_START)
+		dev_info(adev->dev,
+			 "audio PLL: START-bit stond AAN (MOD=0x%08x) — gewist, PLL volgt TGT nu direct\n",
+			 t);
 	t &= ~((AR934X_PLL_AUDIO_MOD_TGT_DIV_INT_MASK
 		<< AR934X_PLL_AUDIO_MOD_TGT_DIV_INT_SHIFT) |
 	       (AR934X_PLL_AUDIO_MOD_TGT_DIV_FRAC_MASK
-		<< AR934X_PLL_AUDIO_MOD_TGT_DIV_FRAC_SHIFT));
+		<< AR934X_PLL_AUDIO_MOD_TGT_DIV_FRAC_SHIFT) |
+	       AR934X_PLL_AUDIO_MOD_START);
 	t |= (div_int  & AR934X_PLL_AUDIO_MOD_TGT_DIV_INT_MASK)
 		<< AR934X_PLL_AUDIO_MOD_TGT_DIV_INT_SHIFT;
 	t |= (div_frac & AR934X_PLL_AUDIO_MOD_TGT_DIV_FRAC_MASK)
@@ -237,6 +251,29 @@ static u32 dpll_sqsum_dvc(struct ath79_i2s_dev *adev)
 		& AR934X_DPLL_3_SQSUM_DVC_MASK;
 }
 
+/* Logt target- vs. fysiek-gebruikte divider (CURRENT_AUDIO_PLL_MODULATION).
+ * Als CUR niet gelijk is aan TGT gebruikt de VCO een andere frequentie dan
+ * geprogrammeerd — precies wat we bij 44,1 kHz verdenken. */
+static void pll_log_current(struct ath79_i2s_dev *adev, const char *tag)
+{
+	u32 mod = pll_rr(adev, AR934X_PLL_AUDIO_MOD_REG);
+	u32 step = pll_rr(adev, AR934X_PLL_AUDIO_MOD_STEP_REG);
+	u32 cur = pll_rr(adev, AR934X_PLL_AUDIO_CUR_MOD_REG);
+	u32 tgt_int = (mod >> AR934X_PLL_AUDIO_MOD_TGT_DIV_INT_SHIFT)
+			& AR934X_PLL_AUDIO_MOD_TGT_DIV_INT_MASK;
+	u32 tgt_frac = (mod >> AR934X_PLL_AUDIO_MOD_TGT_DIV_FRAC_SHIFT)
+			& AR934X_PLL_AUDIO_MOD_TGT_DIV_FRAC_MASK;
+	u32 cur_int = (cur >> AR934X_PLL_AUDIO_CUR_INT_SHIFT)
+			& AR934X_PLL_AUDIO_CUR_INT_MASK;
+	u32 cur_frac = (cur >> AR934X_PLL_AUDIO_CUR_FRAC_SHIFT)
+			& AR934X_PLL_AUDIO_CUR_FRAC_MASK;
+
+	dev_info(adev->dev,
+		 "PLL %s: TGT=%u+%u/262144 CUR=%u+%u/262144 (MOD=0x%08x STEP=0x%08x CURREG=0x%08x START=%lu)\n",
+		 tag, tgt_int, tgt_frac, cur_int, cur_frac, mod, step, cur,
+		 mod & AR934X_PLL_AUDIO_MOD_START);
+}
+
 /* ── Stereo posedge ──────────────────────────────────────────────────── */
 
 static void stereo_set_posedge(struct ath79_i2s_dev *adev, u32 posedge)
@@ -258,6 +295,7 @@ static void stereo_set_posedge(struct ath79_i2s_dev *adev, u32 posedge)
 int ath79_audio_set_freq(struct ath79_i2s_dev *adev, int freq)
 {
 	const struct ath79_pll_config *cfg;
+	struct ath79_pll_config vcfg;
 	unsigned long ref_rate;
 	int retries;
 
@@ -284,6 +322,29 @@ int ath79_audio_set_freq(struct ath79_i2s_dev *adev, int freq)
 		dev_err(adev->dev, "unsupported sample rate %d Hz\n", freq);
 		return -EINVAL;
 	}
+
+	if (freq == 44100 && ref_rate == 25000000 && pll_44k_variant) {
+		vcfg = *cfg;
+		switch (pll_44k_variant) {
+		case 1:	/* VCO 541,9008 MHz / postpll 4 / extdiv 6 (even) */
+			vcfg.divint = 0x15;
+			vcfg.divfrac = 0x2B442;
+			vcfg.postpllpwd = 0x2;
+			vcfg.extdiv = 0x6;
+			break;
+		case 2:	/* QSDK-conform: VCO 541,9008 / postpll 8 / extdiv 3 */
+			vcfg.divint = 0x15;
+			vcfg.divfrac = 0x2B442;
+			vcfg.postpllpwd = 0x3;
+			vcfg.extdiv = 0x3;
+			break;
+		}
+		cfg = &vcfg;
+		dev_info(adev->dev, "44,1kHz-variant %d actief (divint=0x%x extdiv=%u postpll=%u)\n",
+			 pll_44k_variant, cfg->divint, cfg->extdiv, cfg->postpllpwd);
+	}
+
+	pll_log_current(adev, "vóór herprogrammering");
 
 	/* Converge the DPLL — both loops are bounded to avoid starving
 	 * the single-core MIPS CPU with infinite udelay() spins. */
@@ -338,6 +399,8 @@ int ath79_audio_set_freq(struct ath79_i2s_dev *adev, int freq)
 
 	dev_info(adev->dev, "audio PLL configured: sqsum_dvc=0x%x retries_left=%d\n",
 		 dpll_sqsum_dvc(adev), retries);
+
+	pll_log_current(adev, "na herprogrammering");
 
 	return 0;
 }

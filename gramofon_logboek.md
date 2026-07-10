@@ -494,3 +494,76 @@ jffs2-parser voor mtd4-dumps).
    onderzoeken; registerdump 48k (boot-default) vs. 48k (na re-set)
    vergelijken — is een híngeschakelde 48k ook vuil?
 3. PLL-registers dumpen tijdens 44,1-playback en diffen met 48k.
+
+## Sessie 2026-07-10 avond — TWEE GROTE DOORBRAKEN
+
+### Doorbraak 1: het wipe/crash-mysterie volledig opgelost
+De DTS (qca9341_fon_fon2415.dts) definieerde de **resetknop op GPIO 12 —
+onze LRCK-pin** (gegokte GPIO's, aldus het DTS-commentaar zelf). Gevolgen:
+- Module-probe muxt GPIO12 → gpio-keys ziet "knop losgelaten na ≥5 s
+  ingedrukt" → procd draait `jffs2reset -y` (**FACTORY RESET**, wipet
+  ook de sysupgrade.tgz) + reboot. Serieel bewijs: "FACTORY RESET" op
+  de console 0,5 s na de module-probe, reboot 13 s later.
+- Elke playback-stop liet LRCK stilvallen → korte "knopdruk" →
+  procd-REBOOT. **Alle "crashes" van de afgelopen dagen waren dus
+  procd-reboots, geen wilde DMA.** measure_freq was onschuldig
+  (correlatie kwam door playback-stops eromheen).
+- **Fix runtime**: /etc/rc.button/reset vervangen door no-op, opgenomen
+  in de sysupgrade.tgz-lijst. **Fix structureel**: DTS gecorrigeerd
+  (reset-knop verwijderd, LED-GPIO's opgeschoond) — vergt image-flash.
+- Bewijs dat het werkt: harde watchdog-reset overleefd zónder wipe,
+  meerdere nette reboots zonder firewall-verlies.
+
+### fstools-mechanisme begrepen (verklaring wipe-lus)
+Elke boot-mount zet fs_state op PENDING; /etc/init.d/done zet READY aan
+het boot-einde. Reboot vóór `done` (of factory reset) → volgende boot
+wipet. `mount_root done` handmatig vóór reboot voorkomt de wipe — mits
+/overlay écht jffs2 is (na verse format draait de eerste boot soms op
+tmpfs en komt de tgz-restore pas ná kmodloader → ROM-module geladen;
+één nette reboot corrigeert dat). Werkend deployprotocol staat in
+~/.claude/jobs/76995c3e/tmp/deploy_stabiel.sh.
+
+### Doorbraak 2: 44,1 kHz-klok schakelt nu bewezen fysiek om
+- AR9344-datasheet: audio-PLL-MODULATION heeft START-bit (bit 0): uit =
+  PLL volgt TGT_DIV direct; aan = trage ramp via MOD_STEP. CURRENT-
+  register (0x3C, RO: FRAC 27:10, INT 6:1) toont de fysieke divider.
+  Driver wist START nu altijd en logt TGT vs CUR (pll_log_current).
+- Resultaat: CUR volgt TGT exact bij álle omschakelingen (boot-default
+  20,32 → 44,1k-div 28,90 → 48k-div 23,58, alle richtingen).
+- Opname-FFT-bewijs: 440,0 Hz exact bij 44,1k-playback én bij 48k na
+  terugschakeling. Het dinsdag-mysterie ("blijft op 48k") is niet
+  gereproduceerd; meetmethode voortaan: opname-FFT i.p.v. measure_freq.
+- pll_44k_variant module-param (runtime): 0 = VCO 722,53/ext4,
+  1 = VCO 541,90/postpll÷4/ext6, 2 = QSDK 541,90/÷8/ext3.
+
+### NIEUW hoofdprobleem: ~6 kHz-"fluit"/bromtoon domineert de toon
+- 44,1k: fluit 6020 Hz (+5820/5920/6300/6700/6800), 250× de toon.
+- 48k: fluit 6196 Hz (+5716/6596/6676), ook bij boot-verse eerste
+  playback — dus GEEN omschakel-effect en GEEN VCO-effect (variant 0
+  en 1 klinken identiek).
+- De 440 Hz-toon staat er telkens exact maar ~48 dB te zacht onder —
+  ≈ 8 bits → **hypothese: byte-verschuiving in het MBOX→I2S-datapad**
+  (DAC krijgt sample 8 bits verschoven; rommel in de hoge bits = fluit).
+- Dinsdag was 48k aantoonbaar schoon ("fors, zuiver") — bisect loopt:
+  dinsdag-driver (git HEAD 4a1671a, build 34579aba) herbouwd en
+  gedeployed; luistertest = eerste actie volgende sessie (of vanavond).
+- Let op: test-WAV's verschilden in niveau (ffmpeg sine = −18 dBFS!);
+  nieuwe referentie-WAV: toon_440_48k_vol.wav (−1 dBFS, python).
+
+### Volgende stappen
+1. Bisect afronden: is dinsdag-driver (34579aba) boot-vers schoon op
+   48k met toon_440_48k_vol.wav? Zo ja → delta zit in vanavond's
+   pll.c-wijzigingen (functioneel no-ops — dan grondig diffen!);
+   zo nee → omgeving/DAC-toestand onderzoeken.
+2. Byte-shift-hypothese: MBOX FIFO-reset-volgorde t.o.v. START diffen
+   met QSDK (ath79-pcm.c dma_start doet fifo_reset per start).
+3. Image bouwen + flashen met gecorrigeerde DTS (resetknop weg) zodat
+   de rc.button-workaround overbodig wordt.
+
+### Bisect-uitslag (zelfde avond, 21:25): drivercode onschuldig
+Dinsdag-driver (4a1671a, build 34579aba) boot-vers op 48k met −1 dBFS-
+WAV: zelfde brom (5956 Hz, 44× de toon). De brom schaalt mee met het
+signaalniveau → signaal-gecorreleerde vervorming (bit-misuitlijning-
+spoor), geen jitter/stoorbron. Verschil met dinsdag's schone 48k zit
+dus NIET in de drivercode — wat er wél veranderde is de openstaande
+vraag voor de volgende sessie.

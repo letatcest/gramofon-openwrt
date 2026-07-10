@@ -96,6 +96,16 @@
 #define AR934X_PLL_AUDIO_MOD_TGT_DIV_FRAC_MASK	0x3ffff  /* 18 bits */
 #define AR934X_PLL_AUDIO_MOD_TGT_DIV_INT_SHIFT	1
 #define AR934X_PLL_AUDIO_MOD_TGT_DIV_INT_MASK	0x3f
+/* START (bit 0): 0 = PLL volgt TGT_DIV direct; 1 = PLL volgt de trage
+ * modulatie-ramp (stapgrootte in MOD_STEP) — moet voor ons UIT staan. */
+#define AR934X_PLL_AUDIO_MOD_START		BIT(0)
+#define AR934X_PLL_AUDIO_MOD_STEP_REG		0x38
+/* CURRENT: wat de PLL fysiek gebruikt (read-only): FRAC 27:10, INT 6:1 */
+#define AR934X_PLL_AUDIO_CUR_MOD_REG		0x3c
+#define AR934X_PLL_AUDIO_CUR_FRAC_SHIFT		10
+#define AR934X_PLL_AUDIO_CUR_FRAC_MASK		0x3ffff
+#define AR934X_PLL_AUDIO_CUR_INT_SHIFT		1
+#define AR934X_PLL_AUDIO_CUR_INT_MASK		0x3f
 
 /* Audio DPLL registers (offset from dpll_base 0x18116200)
  * Bitposities conform QCA-referentie (ar71xx_regs.h uit QSDK). */
