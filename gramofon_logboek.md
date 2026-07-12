@@ -567,3 +567,69 @@ signaalniveau → signaal-gecorreleerde vervorming (bit-misuitlijning-
 spoor), geen jitter/stoorbron. Verschil met dinsdag's schone 48k zit
 dus NIET in de drivercode — wat er wél veranderde is de openstaande
 vraag voor de volgende sessie.
+
+## 2026-07-12 middag — DELTA-SINDS-DINSDAG GEVONDEN: 4a1671a sloopte I2S_DELAY (+ VOLUME-verzwakking)
+
+**De bisect van 07-10 was ongeldig**: de "dinsdag-driver" werd gebouwd
+van git HEAD `4a1671a`, maar de schone dinsdag-middag-klank draaide op
+`8fd3200`-code. `git show 4a1671a` toont drie startup-wijzigingen die
+allemaal ná de schone test kwamen:
+1. **`I2S_DELAY` VERWIJDERD** uit STEREO_CONFIG ("conform QSDK") — maar
+   de QSDK-referentie stuurt de ínterne codec aan; onze AK4430 staat
+   via DIF (pull-up) in I²S-modus en vereist de 1-BICK-delay. Zonder
+   delay leest de DAC elk sample 1 bit verschoven → zware signaal-
+   gecorreleerde vervorming. **Hoofdverdachte.**
+2. `SPDIF_ENABLE` toegevoegd (8fd3200 had hem niet).
+3. `VOLUME = (8<<8)|8` toegevoegd. QSDK-mapping: sign-magnitude, reg 0
+   = 0 dB, 1-7 = boost, bit 4 = verzwakking. Empirisch (deze sessie):
+   waarde 8 **verzwakt fors** — met VOLUME=0 werd alles "veel harder".
+   Verklaart vermoedelijk de "toon ~48 dB te zacht"-metingen, maar NIET
+   de brom (die bleef identiek bij VOLUME=0).
+
+### Uitgevoerde tests (48k, −1 dBFS 440 Hz, verse boots)
+- VOLUME-fix (build cb2f0277, VOLUME=0): brom onveranderd aanwezig,
+  totaalniveau veel hoger. `VOLUME was=0x00000000` op verse boot.
+- Underruns: eerste aplay na boot 12× underrun (koude jffs2-reads van
+  5,7 MB WAV); tweede run 0 underruns, 30s-bestand speelt in 31 s →
+  DMA-consumptie is exact realtime. Geen spoor.
+- PCM_SWAP-A/B (S16_LE mét swap-bit vs voorgeswapte S16_BE zónder):
+  opname-FFT beide segmenten identiek — 5956 Hz-fluit 258×/216× de
+  toon, zijbanden op +440/+880 Hz (intermodulatie met het signaal).
+  Byte-volgorde/PCM_SWAP definitief onschuldig.
+- Simulaties (numpy): volledige byteswap én <<8-wraparound geven
+  breedbandherrie (ratio 2-9×), géén dominante 6 kHz-fluit → de fluit
+  ontstaat verderop (DAC-modulator die misvormde bitstroom kauwt past
+  bij 1-bit-shift door ontbrekende I2S_DELAY).
+
+### Status bij afsluiten
+- Build `4e7fa712` (I2S_DELAY terug, geen SPDIF_ENABLE, VOLUME=0 —
+  startup-config exact als schone 8fd3200) gedeployed: op schijf, in
+  tgz geverifieerd, fs_state→2, reboot ingezet. **Luistertest = eerste
+  actie volgende sessie** (of direct als de boot nog geverifieerd is).
+- Bron op schijf heeft t.o.v. 4e7fa712 alleen nog een commentaar-
+  correctie (VOLUME-uitleg); herbouw geeft andere md5, zelfde gedrag.
+
+### Volgende stappen
+1. ~~Luistertest 4e7fa712~~ GEDAAN: negatief, zie hieronder.
+   zo nee → laatste delta's 8fd3200↔werkboom diffen (er is er nog één:
+   hw_params I2S_WORD_SIZE bij S24/S32 — raakt S16 niet).
+2. Fixes naar referentiekopie syncen + committen.
+3. Image bouwen + flashen met gecorrigeerde DTS (resetknop weg).
+
+### Luistertest 4e7fa712 (13:00): NEGATIEF — brom blijft, hypothese-startup-config weerlegd
+Startup-config nu exact gelijk aan schone 8fd3200 (I2S_DELAY aan, geen
+SPDIF_ENABLE, VOLUME=0; stereo_cfg=0x00261304) → **zelfde bromtoon**.
+De drie startup-delta's van 4a1671a zijn dus ALLE onschuldig aan de
+brom (VOLUME=8 verklaarde wel de te zachte toon). Overgebleven delta's
+sinds de schone dinsdag-run:
+1. **GPIO-probe-override (4a1671a)**: dinsdag-middag stonden de muxen
+   via runtime-experimenten (herstel.sh/mux_set) — mogelijk een ándere
+   pin/mux-combinatie dan wat de driver nu in probe zet (14/13/12/15 +
+   CUS227-set 22/21/20/18 óók nog?). Reconstrueren uit logboek 07-08:
+   welke muxen stonden er precies tijdens de schone run?
+2. pll.c-wijzigingen (START-bit altijd wissen, logging) — functioneel
+   verdacht laag, maar START-semantiek raakt de PLL-ramp.
+3. **Hardware-degradatie**: sindsdien 5× pen-slip/harde reboots; de
+   5956 Hz-fluit met ±440/880-zijbanden past ook bij een oscillerende
+   charge pump / beschadigde uitgang. → **VEE (pin 16) meten tijdens
+   playback** (was −2,84 V bij schone klank) = snelste hardware-check.

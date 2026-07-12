@@ -298,20 +298,27 @@ static int ath79_i2s_startup(struct snd_pcm_substream *ss,
 	if (!snd_soc_dai_active(dai)) {
 		u32 vol_before = stereo_rr(adev, AR934X_STEREO_REG_VOLUME);
 
-		/* Conform QCA-referentie: géén I2S_DELAY */
+		/* I2S_DELAY MOET AAN: de AK4430 staat via DIF (pull-up) in
+		 * I²S-modus = data 1 BICK na de LRCK-flank.  4a1671a haalde
+		 * dit bit weg ("conform QSDK") — maar de QSDK-referentie
+		 * stuurt de ínterne codec aan, niet een externe I²S-DAC.
+		 * Zonder delay leest de DAC elk sample 1 bit verschoven =
+		 * de zware signaal-gecorreleerde vervorming sinds dinsdag.
+		 * Geen SPDIF_ENABLE (idem 8fd3200, de schone build). */
 		stereo_wr(adev, AR934X_STEREO_REG_CONFIG,
-			  AR934X_STEREO_CONFIG_SPDIF_ENABLE |
 			  AR934X_STEREO_CONFIG_I2S_ENABLE   |
+			  AR934X_STEREO_CONFIG_I2S_DELAY     |
 			  AR934X_STEREO_CONFIG_SAMPLE_CNT_CLEAR_TYPE |
 			  AR934X_STEREO_CONFIG_MASTER);
-		/* Volumeregister: 5-bit veld per kanaal (CH0 bits 12:8,
-		 * CH1 bits 4:0).  Wordt nergens anders gezet; probeer
-		 * midden-schaal en log de resetwaarde. */
-		stereo_wr(adev, AR934X_STEREO_REG_VOLUME, (8 << 8) | 8);
+		/* VOLUME (0x04): sign-magnitude per kanaal (bit 4 = negatief,
+		 * zie QSDK internal-codec), reset 0x0 = 0 dB.  De eerdere
+		 * write van 8 per kanaal (sinds 4a1671a) bleek fors te
+		 * verzwakken (empirisch: verwijderen maakte alles veel
+		 * luider); niet de bron van de vervorming.  Op 0 dB houden. */
+		stereo_wr(adev, AR934X_STEREO_REG_VOLUME, 0);
 		dev_info(adev->dev,
-			 "startup: VOLUME was=0x%08x nu=0x%08x\n",
-			 vol_before,
-			 stereo_rr(adev, AR934X_STEREO_REG_VOLUME));
+			 "startup: VOLUME was=0x%08x nu=0x0 (0 dB)\n",
+			 vol_before);
 		ath79_stereo_reset(adev);
 	}
 	return 0;
