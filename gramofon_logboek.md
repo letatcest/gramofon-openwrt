@@ -633,3 +633,117 @@ sinds de schone dinsdag-run:
    5956 Hz-fluit met ±440/880-zijbanden past ook bij een oscillerende
    charge pump / beschadigde uitgang. → **VEE (pin 16) meten tijdens
    playback** (was −2,84 V bij schone klank) = snelste hardware-check.
+
+## 2026-07-14 — ARCHIEFONDERZOEK: de "schone referentie" heeft NOOIT bestaan
+
+Volledige reconstructie uit de sessietranscripten (76995c3e = 07-07/08,
+3a24c9fe = 07-09 e.v.), aanleiding: verdachte 1 hierboven ("welke muxen
+stonden er tijdens de schone run?").
+
+### Hoofdconclusie: er is nooit een schoon-oordeel geweest
+Alle klankoordelen van Krijn ooit, chronologisch:
+- 07-08 14:42 UTC (allereerste geluid ooit): "geluid! JA best hard" →
+  direct daarna 14:43 "Hij is NIET schoon", 14:45 "vals/vuil alsof het
+  een startende motor is", 14:51 "nog steeds dat motorgeluid".
+- 07-08 15:32: "Nog steeds niet goed" (opname 2026_07_08_17_29_27.mp3).
+- 07-09 22:34 (44,1k): "de toon klinkt, maar is nog steeds niet bepaald
+  fijn"; 22:36 (32k): "nu is de toon lager, maar nog steeds niet
+  stabiel". **Er is op 07-09 nooit een 48k-luistertest met oordeel
+  geweest.**
+- 07-10/07-12: "bromtoon", "zelfde lelijke bromgeluid" (allemaal).
+De logboekregel van 07-10 "Dinsdag was 48k aantoonbaar schoon ('fors,
+zuiver')" is een verzinsel — het citaat bestaat in geen enkel
+transcript (dichtstbijzijnde: "JA best hard"). Ook "alleen 48k klinkt
+schoon" (07-09-sectie) was een onbevestigde aanname.
+
+### FFT-bewijs: de fluit zat er vanaf de allereerste seconde in
+- noise.wav (opgenomen 07-08 14:48 UTC, 6 min na het eerste geluid):
+  dominante pieken 6020 Hz + 4260 Hz, toon niet in top-6.
+- 2026_07_08_17_29_27.mp3 (07-08, 44,1k-content): 6020 Hz dominant in
+  ÁLLE segmenten, zijbanden 5920/6120/6400/6900, toon begraven.
+→ Identieke signatuur als 07-10 (6196 Hz) en 07-12 (5956 Hz). **Er is
+geen regressie geweest; de fluit is een dag-één-eigenschap.** De hele
+bisect/delta-jacht (07-10 t/m 07-12) joeg op een fantoom.
+
+### Overige correcties
+- **VEE-meting −2,84 V (07-08 14:42) was TIJDENS het vuile geluid** —
+  de charge pump werkte dus prima mét brom; "VEE meten, was −2,84 V bij
+  schone klank" als hardware-check verliest daarmee zijn referentie.
+- Mux-toestand bij het eerste geluid (na reboot ~13:33 UTC):
+  CUS227-set 18/20/21/22 om 13:36 ontmuxt (→0); 13:51 in één keer
+  13→mux12 (BICK), 12→mux13 (LRCK), 15→mux14 (SDTO); 14:40 14→mux15
+  (MCK) → geluid. Dus GEEN CUS227-pinnen ernaast; routing identiek aan
+  wat de driver-probe nu zet. Verdachte 1 (GPIO-override) vervalt.
+- MCLK-ratio onschuldig: 07-08 draaide op de QSDK-tabel (256fs), vanaf
+  4a1671a op 512fs — brom identiek. AK4430ET-datasheet: Normal Speed
+  512/768/1152fs, maar Auto Setting Mode accepteert 256fs bij 32-96k
+  (alleen mindere S/N). Beide geldig; klokketen is bovendien volledig
+  synchroon (MCLK=512×LRCK exact uit dezelfde deler → geen beat).
+
+### Nieuwe hoofdhypothese: PIN-ROL-PERMUTATIE
+De roltoewijzing 13=BICK/12=LRCK/15=SDTO is op 07-08 om 13:51 in één
+keer gegokt en daarna NOOIT gepermuteerd; alleen MCK-op-14 is empirisch
+bewezen (geluid verscheen exact toen MCK op 14 landde). Als bv. SDTO en
+BICK verwisseld op de DAC aankomen, lockt de DAC wel op MCLK (er is
+geluid) maar decodeert hij signaal-gecorreleerde rommel — passend bij:
+fluit ≫ toon (±47 dB), zijbanden ±440/880, aanwezig in álle
+drivergeneraties. **Test: 6 permutaties van (BICK,LRCK,SDTO) over
+GPIO 12/13/15, runtime via mux_set (zit nog in de driver), MCK vast op
+14; per permutatie 440 Hz-toon + opname-FFT.** Let op: rc.button-no-op
+moet actief zijn (LRCK weg van GPIO12 = "knopdruk" voor gpio-keys).
+Simulaties sluiten periodieke per-N-sample-corruptie uit (toon blijft
+dan dominant) — de vervorming ontstaat ín de DAC-decodering.
+
+## 2026-07-14 middag — OPGELOST: BICK was 32fs, AK4430 eist ≥48fs (I2S_WORD_SIZE-fix)
+
+### Bewijsketen van vanmiddag (elke stap versmalde het net)
+1. **Permutatietest** (6 roltoewijzingen à 25 s, runtime mux_set, MCK
+   vast op GPIO14): alleen P0 (huidig) en P1 (LRCK↔SDTO gewisseld)
+   geven geluid; P1 = "nieuwe toon, niet schoon" (FFT: uitgesmeerde
+   ~6 kHz-cluster). P2-P5 (BICK weg van GPIO13): stilte. → GPIO13→
+   DAC-BICK zeker; huidige routing vrijwel zeker goed; permutatie-
+   hypothese weg.
+2. **Stilte/1000 Hz/32k-drieluik** (koptelefoon-mic): stilte is écht
+   stil; "schone" 1000 Hz blijkt in FFT louter ONEVEN harmonischen
+   (5/7/9/11/13/15 kHz, grondtoon −16,6 dB!); 440@32k zelfde brom.
+   → de "fluit" ís de harmonischenwolk van de eigen toon; piek altijd
+   ~6-7 kHz onafhankelijk van toon/fs.
+3. **Line-in-opnames (OBS, elektrisch)**: uitgangsamplitude volledig
+   ONAFHANKELIJK van digitaal niveau (0/−20/−40/−50 dB ≈ gelijke rms;
+   440-piek bij −50 dB zelfs +3 dB t.o.v. −40!). Output = blokgolf op
+   sgn(sample) op volle schaal + de echte toon ~48 dB eronder.
+4. **AR9344-datasheet**: I2S_WORD_SIZE=0 → 16-bit I2S-slots; met onze
+   POSEDGE-keten wordt BICK dan 32fs (niet 64fs zoals de pll.c-
+   commentaren beweerden). I2S_WORD_SIZE=1 → 32-bit slots, "PCM data
+   left justified".
+5. **AK4430-datasheet (fig. 3/4): BICK ≥ 48fs** — de DAC is 24-bit-
+   only. Bij 32fs krijgt zijn 24-bit schuifregister maar 16 klokken
+   per slot → MSB-byte van de DAC = LSB-byte van het vórige sample:
+   zachte sinus → tekenblokgolf op volle schaal (sgn(x)); vol niveau
+   → 0-255-razende byte = de ~6 kHz-hash; echte data 8 bits lager =
+   "toon 48 dB te zacht". Verklaart ELKE meting sinds 07-08,
+   inclusief de QSDK-notitie "32 bits is really noisy" (interne codec
+   heeft het omgekeerde probleem).
+
+### De fix (ath79-i2s-drv.c, hw_params)
+`AR934X_STEREO_CONFIG_I2S_WORD_SIZE` nu óók gezet bij S8/S16 (QSDK
+zette hem alleen bij S24/S32 — die stuurt de interne codec aan, geen
+externe 24-bit DAC). Slot wordt 32 bits links-uitgelijnd, BICK echt
+64fs. Build `3670648a`, stereo_cfg bij playback nu `0x00261b04`
+(bit 11 aan; was 0x00261304).
+
+### Resultaat
+**SCHONE 440 Hz-TOON** (gebruikersoordeel, verse boot, eerste schone
+klank ooit op dit apparaat). FFT van de opname: 439,8 Hz is de
+TOPpiek; oude fluitregio (5,5-6,5 kHz) nu −20,8 dB ónder de toon
+(was +47 dB erboven) — verbetering ~68 dB. Resterende oneven
+harmonischen in de opname zijn vrijwel zeker clipping van de
+pc-opname-ingang (DAC levert nu voor het eerst echt 2 Vrms).
+
+### Openstaand
+1. Elektrische verificatie op −40 dB (lineariteit) via line-in.
+2. Luistertest 44,1k/32k met de fix (PLL-omschakeling + nieuwe framing).
+3. Muziek spelen!
+4. pll.c-commentaren "BICK altijd 64fs" corrigeren (was 32fs; nu klopt
+   het pas echt); DTS-image flashen (resetknop weg); diagnostiek
+   opruimen.

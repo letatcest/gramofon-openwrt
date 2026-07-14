@@ -345,10 +345,21 @@ static int ath79_i2s_hw_params(struct snd_pcm_substream *ss,
 	if (ret)
 		return ret;
 
+	/* I2S_WORD_SIZE MOET óók bij 8/16-bit data AAN (= 32-bit I2S-
+	 * slots, data links-uitgelijnd per AR9344-datasheet).  Met
+	 * I2S_WORD_SIZE=0 wordt het slot 16 bits en zakt BICK naar 32fs
+	 * — maar de AK4430 is 24-bit-only en eist BICK ≥ 48fs (datasheet
+	 * fig. 3/4).  Zijn 24-bit schuifregister krijgt dan per slot maar
+	 * 16 klokken: MSB-byte = LSB-byte van het vórige sample →
+	 * volle-schaal tekenblokgolf + hash, echte toon ~48 dB te zacht.
+	 * Dit was dé bron van de "6 kHz-brom" sinds het eerste geluid.
+	 * (QSDK zet dit bit alleen bij 24/32-bit: die stuurt de interne
+	 * codec aan, geen externe 24-bit DAC.) */
 	switch (params_format(params)) {
 	case SNDRV_PCM_FORMAT_S8:
 		mask |= AR934X_STEREO_CONFIG_DATA_WORD_8
 			<< AR934X_STEREO_CONFIG_DATA_WORD_SIZE_SHIFT;
+		mask |= AR934X_STEREO_CONFIG_I2S_WORD_SIZE;
 		break;
 	case SNDRV_PCM_FORMAT_S16_LE:
 		mask |= AR934X_STEREO_CONFIG_PCM_SWAP;
@@ -356,6 +367,7 @@ static int ath79_i2s_hw_params(struct snd_pcm_substream *ss,
 	case SNDRV_PCM_FORMAT_S16_BE:
 		mask |= AR934X_STEREO_CONFIG_DATA_WORD_16
 			<< AR934X_STEREO_CONFIG_DATA_WORD_SIZE_SHIFT;
+		mask |= AR934X_STEREO_CONFIG_I2S_WORD_SIZE;
 		break;
 	case SNDRV_PCM_FORMAT_S24_LE:
 		mask |= AR934X_STEREO_CONFIG_PCM_SWAP;
