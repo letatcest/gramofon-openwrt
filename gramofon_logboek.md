@@ -841,3 +841,79 @@ te zwaar voor de 560 MHz MIPS → continue underruns ("hapert").
    te breiden (of eerst de DTS-flash te doen) — eerste test mag
    niet-persistent; (4) testen met BubbleUPnP/Hi-Fi Cast vanaf de
    telefoon, RAM/CPU bewaken; (5) bij haperen/OOM → shairport-sync.
+
+## 2026-07-15 (middag) — DLNA-renderer opgezet; KERNVONDST: GPIO12-interrupt-storm bij elke playback
+
+### Route: gmediarender bestaat niet → upmpdcli + mpd-mini
+- **gmediarender zit NIET in de 24.10-feeds** (het plan hierboven ging
+  daar wel van uit). shairport-sync-mini vereist libffmpeg-full — past
+  nooit (overlay 1,7 MB vrij).
+- Gekozen keten: **upmpdcli** (564K) + libupnpp + libnpupnp +
+  libmicrohttpd-no-ssl + **mpd-mini** (463K) + libstdcpp6 (702K) +
+  codec-libs; "boost" is een 1,2 KB metapakket. Totaal ± 10,2 MB.
+- Geïnstalleerd met `opkg install -d ram` (= /tmp, **niet-persistent**;
+  bewust, eerste proef). Na een reboot is dit alles dus WEG en moet
+  het opnieuw (of structureel: in het flash-image bakken — dat
+  bevrijdt ook de 10,2 MB tmpfs).
+
+### Werkend gekregen (details voor herhaling)
+- **Firewall (WEL persistent, tgz-md5 0e5eef92)**: thuisnet
+  192.168.178.x hangt aan eth1 = wan-zone met input REJECT! uci-regels
+  "Allow-SSDP" (udp 1900) en "Allow-UPnP-Renderer" (tcp/udp
+  49100-49200) toegevoegd, gecommit, via `sh /etc/rc.local` geborgd.
+- **upmpdcli weigert als root**: gebruiker/groep `upmpdcli` (uid/gid
+  1000) aan /etc/passwd+/etc/group toegevoegd (niet-persistent!);
+  symlink /usr/share/upmpdcli → /tmp/usr/share/upmpdcli nodig voor
+  description.xml. Renderer heet "Gramofon-UPnP/AV", poort 49152.
+- **Daemons overleven het ssh-sessie-einde niet zomaar**: mpd stierf
+  telkens netjes ("Saving state file" in log) zodra de sessie sloot,
+  óók met kaal `setsid` of `--no-daemon`. Werkende vorm:
+  `setsid sh -c "LD_LIBRARY_PATH=/tmp/usr/lib /tmp/usr/bin/mpd
+  --no-daemon /tmp/etc/mpd.conf </dev/null >/tmp/mpd_fg.log 2>&1" &`
+  (zelfde wrapper voor upmpdcli). busybox heeft geen nohup.
+- Configs: /tmp/etc/mpd.conf (alsa hw:0,0, mixer_type software,
+  audio_buffer_size 256, bind 127.0.0.1:6600) en /tmp/etc/upmpdcli.conf
+  (upnpav=1, openhome=0, checkcontentformat=0). MPD-bediening:
+  `printf "status\nclose\n" | nc 127.0.0.1 6600`.
+
+### Telefoontest faalde — oorzaak 1: MPD-OOM
+BubbleUPnP/Hi-Fi Cast zagen de renderer en er kwam even geluid ("maar
+dat klonk niet goed"), daarna geen verbinding meer. dmesg: **mpd
+OOM-gekilled bij anon-rss 13,3 MB** (upmpdcli bleef leven → apps zien
+de renderer wel maar kunnen niet spelen). Mitigatie: wpad, uhttpd,
+odhcpd, dnsmasq gestopt (niet-persistent), audio_buffer_size 512→256;
+daarna ± 9 MB available. kmod-zram zou helpen maar is niet gebouwd
+(vermagic → herflash nodig).
+
+### KERNVONDST — oorzaak 2: GPIO12-interrupt-storm bij ELKE playback
+Bij de gecontroleerde lokale MPD-test (128 kbps mp3, state play):
+`[irq/12-keys]` **48% CPU** + mpd 25% + upmpdcli 7% → de 535 MHz CPU
+verzadigt → underruns én ssh onbereikbaar (kex "Connection reset";
+ping blijft werken).
+
+**Verklaring**: het geflashte image bevat nog het oude DTS met de
+resetknop op **GPIO12 — precies de pin die de driver als LRCK
+gebruikt**. Elke playback toggelt LRCK 44.100×/s en de
+gpio-keys-interrupt-thread vreet de CPU op. Bij kale aplay-tests
+(aplay ≈ 0% CPU) bleef er genoeg over en viel dit nooit op; met MPD
+erbij niet meer. Verklaart vermoedelijk ook (een deel van) de eerdere
+"interrupt-storm"-crashes.
+
+**Belangrijk**: het apparaat kwam na afloop van het testfragment NIET
+vanzelf terug (15+ min ssh-reset, ping OK) — de storm stopt dus niet
+bij einde nummer (MPD houdt het device open / LRCK blijft lopen).
+Sessie beëindigd met stroomcyclus door gebruiker.
+
+### Fix-plan (VOLGENDE SESSIE EERST DOEN, vóór elke audiotest)
+1. `ls /sys/bus/platform/drivers/gpio-keys/` → devicenaam noteren;
+   `echo <devicenaam> > /sys/bus/platform/drivers/gpio-keys/unbind`.
+   De "knop" is fysiek geen knop meer, dus unbind is veilig.
+2. Verifiëren: `[irq/12-keys]` weg uit top, /proc/interrupts stil.
+3. Unbind-regel in /etc/rc.local + `sh /etc/rc.local` + tgz-md5-check
+   + sync (anders is het na één reboot weer terug).
+4. Dan pas: upmpdcli-keten herinstalleren (opkg -d ram; gebruiker
+   upmpdcli + symlink opnieuw!), lokale MPD-test mét CPU-meting,
+   daarna telefoontest.
+5. Structureel: DTS-image flashen lost de knop definitief op (stond
+   al op de roadmap) en pakketten in het image bakken lost de
+   persistentie + tmpfs-druk op.
