@@ -833,3 +833,11 @@ te zwaar voor de 560 MHz MIPS → continue underruns ("hapert").
    /tmp-limiet: de stream gaat rechtstreeks naar ALSA. Let op: de
    renderer moet naar hw:0,0 met S16 op de geverifieerde rates;
    softwarevolume/resampling het liefst uit (CPU).
+   **Plan volgende sessie**: gmediarender-route eerst (lichtst, snelst
+   te verifiëren): (1) `opkg info gmediarender` — grootte en
+   afhankelijkheden wegen (flash 16 MB, RAM 56 MB); (2) installeren,
+   output hw:0,0/S16 zonder resampling; (3) let op: opkg-installs
+   overleven een reboot niet zonder de tar-lijst in /etc/rc.local uit
+   te breiden (of eerst de DTS-flash te doen) — eerste test mag
+   niet-persistent; (4) testen met BubbleUPnP/Hi-Fi Cast vanaf de
+   telefoon, RAM/CPU bewaken; (5) bij haperen/OOM → shairport-sync.
