@@ -21,10 +21,15 @@ static struct snd_soc_dai_driver ak4430et_dai = {
 		.rates        = SNDRV_PCM_RATE_22050 | SNDRV_PCM_RATE_32000 |
 				SNDRV_PCM_RATE_44100 | SNDRV_PCM_RATE_48000 |
 				SNDRV_PCM_RATE_88200 | SNDRV_PCM_RATE_96000,
+		/* Alleen elektrisch geverifieerde formaten (2026-07-15):
+		 * S16 en S32_BE geven een schone, lineair schalende sinus.
+		 * S24 (LE én BE) is verwijderd: het 24-bit FIFO-pad levert
+		 * hash en kan het apparaat in een interrupt-storm hangen.
+		 * S32_LE is verwijderd: PCM_SWAP wisselt per 16-bit
+		 * halfwoord en verhaspelt dus 32-bit LE-containers. */
 		.formats      = SNDRV_PCM_FMTBIT_S16_LE |
 				SNDRV_PCM_FMTBIT_S16_BE |
-				SNDRV_PCM_FMTBIT_S24_LE |
-				SNDRV_PCM_FMTBIT_S24_BE,
+				SNDRV_PCM_FMTBIT_S32_BE,
 	},
 };
 

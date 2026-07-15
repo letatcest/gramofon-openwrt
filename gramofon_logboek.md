@@ -747,3 +747,74 @@ pc-opname-ingang (DAC levert nu voor het eerst echt 2 Vrms).
 4. pll.c-commentaren "BICK altijd 64fs" corrigeren (was 32fs; nu klopt
    het pas echt); DTS-image flashen (resetknop weg); diagnostiek
    opruimen.
+
+## 2026-07-15 — EINDDOEL BEREIKT: MUZIEK! (+ meetketen-saga en 3 crashes)
+
+### Eindresultaat
+**"Nu klinkt het heel goed!!!"** — 60 s Rachmaninoff (concert­opname
+april 2025), 48 kHz S16 vanaf /tmp, elektrisch geverifieerd 0,000 %
+clipping, piek −17,6 dBFS, levende dynamiek-envelop. Het project­doel
+(muziek via de 3,5 mm-jack) is bereikt.
+
+### Verificaties geslaagd (alle drie de openstaande punten van 07-14)
+1. **Lineariteit**: −40 vs −50 dB toon → exact **10,0 dB** verschil,
+   beide schone sinussen (H2 ≤ −88 dB, H3 ≤ −55 dB). De fix van 07-14
+   was dus volledig; de DAC is schoon en lineair.
+2. **44,1k/32k**: PLL schakelt correct om (dmesg: TGT=CUR=28+236290/…
+   bij 44k1) — 44,1 kHz → **440,00 Hz exact**, 32 kHz → 439,73 Hz,
+   beide kraakzuiver, posedge 4/6 zoals berekend.
+3. **Muziek**: zie boven.
+
+### De meetketen-saga (halve dag verstookt — leerzaam)
+De ochtend begon met "de brom is terug": elke meting toonde een
+volle-schaal 440 Hz-BLOKGOLF, niveau- én formaat-onafhankelijk
+(S16/S24/S32, BE/LE identiek). Achtereenvolgens weerlegd: rechts-
+uitlijning met tekenuitbreiding (S32-test), OBS-monitor-terugkoppel-
+lus (soundbar gemute → zelfde blokgolf). Doorbraak: **−17,25 dB
+analoge verzwakking op de pc-capture → perfecte sinus** (H3 −63 dB).
+De "line-in" van de pc (ALC1150) is op mic-niveau gevoelig:
+vol-schaal ≈ 40 mV. Alles boven digitaal ≈ −34 dBFS uit de DAC clipt
+de ADC — de blokgolven waren ADC-clipping, nooit de DAC.
+**Meetprotocol voortaan**: `amixer -c0 sset Capture 0` (= −17,25 dB),
+`Line Boost 0`, tonen ≤ −40 dBFS; en let op: de GNOME-ingangsslider/
+WirePlumber zet deze gains stiekem terug (2× gebeurd, o.a. toen de
+gebruiker "het volume" hoger zette — dat was de INGANG).
+Datasheet-bevestiging (AR9344, §9.11.1): klokketen klopt exact —
+MCLK 512fs, posedge 4 → SPDIF_SCK 128fs → BICK 64fs (I2S_WORD_SIZE=1
+⇒ I2S_SCK = SPDIF_SCK/2), en "PCM data left justified" klopt dus wél.
+
+### Driverwijziging: formatenlijst aangescherpt (ak4430et.c, build 639ec5c1)
+- **S24_LE/S24_BE VERWIJDERD**: het 24-bit FIFO-pad levert hash én
+  heeft het apparaat in een interrupt-storm gehangen (ping werkt,
+  userspace dood; watchdog of stekker nodig). Zat al in de
+  oorspronkelijke formatenlijst — altijd al kapot geweest.
+- **S32_BE TOEGEVOEGD en geverifieerd** (schone sinus op −45 dB,
+  zelfde absolute niveau als S16 → DATA_WORD_32-pad correct).
+- **S32_LE bewust NIET**: PCM_SWAP wisselt per 16-bit halfwoord en
+  verhaspelt 32-bit LE-containers.
+- Actief: S16_LE / S16_BE / S32_BE.
+
+### DEPLOY-LES (3 reboots verspild): sysupgrade.tgz-stap is verplicht
+mount_root pakt /sysupgrade.tgz elke boot uit over de overlay (de
+overlay-wipe-workaround van 07-10). `opkg install` alléén wordt dus
+bij elke reboot teruggedraaid. Protocol: install → `sh /etc/rc.local`
+(regenereert tgz) → tgz-inhoud verifiëren (tar xzf + md5) → sync →
+reboot (eerst down afwachten, dan up, dan md5 herchecken).
+
+### Crash-oorzaak 2 en 3: RAM-nood (apparaat heeft 56 MB!)
+22 MB WAV in /tmp (tmpfs=RAM) + afspelen → OOM/interrupt-storm →
+watchdog-reboot. Zelfde beeld bij volle /tmp tijdens de 44k1-
+luistertest. Regel: **bestanden op /tmp ≤ ~12 MB**, /tmp verder leeg.
+Streamen via `ffmpeg | ssh aplay -` werkt NIET: dropbear-encryptie is
+te zwaar voor de 560 MHz MIPS → continue underruns ("hapert").
+60 s-fragmenten in /tmp zijn de werkwijze tot er iets beters is
+(nc-streaming zonder encryptie? NFS? — uitzoeken).
+
+### Openstaand
+1. pll.c-commentaren "BICK altijd 64fs" corrigeren (klopt nú, maar de
+   herleiding erbij zetten: SPDIF_SCK/2 bij I2S_WORD_SIZE=1).
+2. S24-interrupt-storm-bug begrijpen/afvangen (formaat is weg uit de
+   lijst, maar de driver hoort nooit te kunnen hangen).
+3. Muziek langer dan 60 s: transport zonder ssh-encryptie.
+4. DTS-image flashen (resetknop-fix) — maakt de tgz-sluiproute
+   overbodig; diagnostiek opruimen.
