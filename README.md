@@ -4,6 +4,8 @@
 
 OpenWrt-port voor de **Fon Fonera Hub FON2415**, ook bekend als de **Gramofon** — een cloud-muziekstreamer waarvan de originele cloud-infrastructuur al jaren buiten gebruik is. Dit project geeft het apparaat een nieuw leven als zelfstandige audiospeler.
 
+**Status juli 2026: de audio werkt.** Er is een ALSA/ASoC-driver voor de AR9341-I2S-controller en de AK4430ET-DAC geschreven; muziek klinkt schoon via de 3.5mm-jack (`aplay -D hw:0,0`).
+
 ## Hardware
 
 | Component | Specificatie |
@@ -57,6 +59,36 @@ sudo systemctl start tftpd-hpa
 
 Na herstart: http://192.168.1.1 — LuCI webinterface, wachtwoord leeg.
 
+## Audio (AK4430ET via I2S)
+
+De audiodriver zit in [`package/ath79-audio/`](package/ath79-audio/) en bestaat uit twee kernelmodules:
+
+- **`ath79-i2s.ko`** — platformdriver voor de AR9341 stereo/I2S-controller: MBOX-DMA, audio-PLL (fractional-N) en klokconfiguratie.
+- **`ak4430et.ko`** — codec-driver voor de AKM AK4430ET DAC (klok-slave, geen registerinterface).
+
+| Eigenschap | Waarde |
+|------------|--------|
+| ALSA-apparaat | `hw:0,0` (afspelen, stereo) |
+| Formaten | S16_LE, S16_BE, S32_BE |
+| Samplerates | 22,05 – 96 kHz (32 / 44,1 / 48 kHz elektrisch geverifieerd) |
+| Klokken | MCLK = 512fs (GPIO14), BICK = 64fs (GPIO13), LRCK = fs (GPIO12), SDTO = GPIO15 |
+
+Afspelen:
+
+```bash
+aplay -D hw:0,0 muziek.wav    # 48 kHz, S16_LE, stereo
+```
+
+### Belangrijkste bevinding
+
+De AK4430 eist een bitclock van **minimaal 48fs**. De AR9341 levert bij 16-bit data standaard 32fs; het `I2S_WORD_SIZE`-bit in `STEREO_CONFIG` moet daarom óók bij S8/S16 gezet worden, zodat BICK op 64fs staat. Zonder die instelling produceert de DAC alleen een harde 6 kHz-brom. Zie [`gramofon_logboek.md`](gramofon_logboek.md) voor het volledige onderzoeksverslag.
+
+### Beperkingen
+
+- **RAM**: 64 MB (≈ 56 MB bruikbaar). `/tmp` is tmpfs; houd audiobestanden daar ≤ 12 MB, anders volgt een OOM-crash.
+- **Streamen over ssh** (`... | ssh aplay -`) hapert: dropbear-encryptie is te zwaar voor de 535 MHz-MIPS. Kopieer bestanden vooraf naar `/tmp`, of gebruik een onversleuteld transport.
+- **S24- en S32_LE-formaten** zijn bewust niet geadverteerd: het 24-bit FIFO-pad kan het apparaat laten hangen en `PCM_SWAP` byteswapt per 16-bit halfwoord (verhaspelt 32-bit LE).
+
 ## Lokaal bouwen
 
 ```bash
@@ -76,9 +108,11 @@ Builds against OpenWrt **v24.10.6** (latest stable). Duurt 30–90 minuten bij d
 - [x] GitHub Actions build pipeline
 - [x] Build geverifieerd succesvol (OpenWrt 24.10.6, kernel 6.6.127)
 - [x] Geflasht en getest — OpenWrt boot, Ethernet werkt, WiFi werkend (AP-modus)
-- [ ] GPIO-nummers voor LED's en resetknop verifiëren
+- [x] **Audio (AK4430ET) werkend** — schone muziekweergave, lineariteit en PLL-omschakeling (32/44,1/48 kHz) geverifieerd (2026-07-15)
+- [ ] GPIO-nummers voor LED's en resetknop verifiëren (resetknop stond fout op GPIO12 = LRCK; uit de DTS verwijderd)
 - [ ] Ethernet PHY-configuratie verifiëren (AR9341 + Atheros S27)
-- [ ] Audio (AK4430ET) werkend
+- [ ] S24-hangbug in het FIFO-pad afvangen
+- [ ] Bijgewerkt DTS-image flashen en diagnostische module-parameters opruimen
 
 ## Bijdragen
 
