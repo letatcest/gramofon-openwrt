@@ -818,3 +818,18 @@ te zwaar voor de 560 MHz MIPS → continue underruns ("hapert").
 3. Muziek langer dan 60 s: transport zonder ssh-encryptie.
 4. DTS-image flashen (resetknop-fix) — maakt de tgz-sluiproute
    overbodig; diagnostiek opruimen.
+5. **Streamen vanaf standaard-telefoonapps** (nieuw doel, 07-15):
+   het apparaat moet als netwerkspeler zichtbaar zijn voor gewone
+   apps op de telefoon. Kandidaat-protocollen, te wegen op wat de
+   hardware aankan (56 MB RAM, 535 MHz MIPS, geen Bluetooth):
+   - **DLNA/UPnP-renderer** (gmediarender is klein en zit in de
+     OpenWrt-feeds; Android-apps als BubbleUPnP/Hi-Fi Cast, en veel
+     muziekapps kunnen ernaartoe casten);
+   - **AirPlay** (shairport-sync, zit ook in de feeds; standaard op
+     iPhone) — CPU-last van ALAC-decodering + volume nog te meten;
+   - Spotify Connect (librespet/librespot) en Chromecast zijn
+     vermoedelijk te zwaar (TLS/Ogg-decodering) — eerst meten.
+   Dit lost meteen punt 3 op (transport zonder ssh) én omzeilt de
+   /tmp-limiet: de stream gaat rechtstreeks naar ALSA. Let op: de
+   renderer moet naar hw:0,0 met S16 op de geverifieerde rates;
+   softwarevolume/resampling het liefst uit (CPU).

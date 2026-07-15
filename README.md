@@ -113,6 +113,7 @@ Builds against OpenWrt **v24.10.6** (latest stable). Duurt 30–90 minuten bij d
 - [ ] Ethernet PHY-configuratie verifiëren (AR9341 + Atheros S27)
 - [ ] S24-hangbug in het FIFO-pad afvangen
 - [ ] Bijgewerkt DTS-image flashen en diagnostische module-parameters opruimen
+- [ ] Streamen vanaf standaard-telefoonapps (DLNA/UPnP-renderer of AirPlay)
 
 ## Bijdragen
 
