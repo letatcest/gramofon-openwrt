@@ -1,95 +1,95 @@
-# OpenWrt voor Fon Fonera Hub FON2415 (Gramofon)
+# OpenWrt for Fon Fonera Hub FON2415 (Gramofon)
 
 ![Build Status](https://github.com/letatcest/gramofon-openwrt/actions/workflows/build.yml/badge.svg)
 
-OpenWrt-port voor de **Fon Fonera Hub FON2415**, ook bekend als de **Gramofon** — een cloud-muziekstreamer waarvan de originele cloud-infrastructuur al jaren buiten gebruik is. Dit project geeft het apparaat een nieuw leven als zelfstandige audiospeler.
+OpenWrt port for the **Fon Fonera Hub FON2415**, also known as the **Gramofon** — a cloud music streamer whose original cloud infrastructure has been defunct for years. This project gives the device a new life as a standalone audio player.
 
-**Status juli 2026: de audio werkt.** Er is een ALSA/ASoC-driver voor de AR9341-I2S-controller en de AK4430ET-DAC geschreven; muziek klinkt schoon via de 3.5mm-jack (`aplay -D hw:0,0`).
+**Status July 2026: audio works.** An ALSA/ASoC driver has been written for the AR9341 I2S controller and the AK4430ET DAC; music plays back cleanly via the 3.5mm jack (`aplay -D hw:0,0`).
 
 ## Hardware
 
-| Component | Specificatie |
+| Component | Specification |
 |-----------|-------------|
 | CPU | Atheros AR9341 @ 535MHz (MIPS 74Kc) |
 | RAM | 64MB DDR2 |
 | Flash | 16MB SPI NOR (MXIC MX25L128) |
-| WiFi | 2.4GHz 802.11b/g/n (geïntegreerd) |
-| Ethernet | 2 poorten via Bi-TEK FM-1024LLF switch |
+| WiFi | 2.4GHz 802.11b/g/n (integrated) |
+| Ethernet | 2 ports via Bi-TEK FM-1024LLF switch |
 | Audio DAC | AKM AK4430ET (3.5mm jack) |
 | UART | J2 header, 115200 8N1, 3.3V TTL |
-| Board naam | Fonera HUB FON2415 (intern, U-Boot) |
+| Board name | Fonera HUB FON2415 (internal, U-Boot) |
 
-## Flash-indeling
+## Flash layout
 
-| Partitie | Offset | Grootte | Inhoud |
+| Partition | Offset | Size | Contents |
 |----------|--------|---------|--------|
-| u-boot | 0x000000 | 128KB | Bootloader — niet overschrijven |
-| firmware | 0x020000 | 15.75MB | Kernel + rootfs (doelgebied) |
-| fon_data | 0xfe0000 | 64KB | Fon-specifieke data |
-| art | 0xff0000 | 64KB | **WiFi-kalibratie — NOOIT overschrijven** |
+| u-boot | 0x000000 | 128KB | Bootloader — do not overwrite |
+| firmware | 0x020000 | 15.75MB | Kernel + rootfs (target area) |
+| fon_data | 0xfe0000 | 64KB | Fon-specific data |
+| art | 0xff0000 | 64KB | **WiFi calibration — NEVER overwrite** |
 
-## Image downloaden
+## Downloading the image
 
-Ga naar [Actions](https://github.com/letatcest/gramofon-openwrt/actions), klik op de laatste succesvolle build, en download het artifact `fon2415-openwrt-image`.
+Go to [Actions](https://github.com/letatcest/gramofon-openwrt/actions), click the latest successful build, and download the `fon2415-openwrt-image` artifact.
 
-## Flashen via U-Boot (UART)
+## Flashing via U-Boot (UART)
 
-Verbind via UART (J2 header, 115200 8N1), onderbreek de boot binnen 1 seconde.
+Connect via UART (J2 header, 115200 8N1), interrupt the boot within 1 second.
 
 ```
-# Netwerk instellen
+# Set up networking
 setenv ipaddr 192.168.178.200
-setenv serverip 192.168.178.131   # IP van je TFTP-server
+setenv serverip 192.168.178.131   # IP of your TFTP server
 
-# Testen
+# Test
 ping 192.168.178.131
 
-# Flash (verwacht fon2415.image op de TFTP-server)
+# Flash (expects fon2415.image on the TFTP server)
 run lf
 
-# Herstart
+# Reboot
 reset
 ```
 
-Zet `fon2415.image` (de factory-build) in je TFTP-map:
+Place `fon2415.image` (the factory build) in your TFTP directory:
 ```bash
 cp fon2415.image /var/lib/tftpboot/
 sudo systemctl start tftpd-hpa
 ```
 
-Na herstart: http://192.168.1.1 — LuCI webinterface, wachtwoord leeg.
+After reboot: http://192.168.1.1 — LuCI web interface, empty password.
 
 ## Audio (AK4430ET via I2S)
 
-De audiodriver zit in [`package/ath79-audio/`](package/ath79-audio/) en bestaat uit twee kernelmodules:
+The audio driver lives in [`package/ath79-audio/`](package/ath79-audio/) and consists of two kernel modules:
 
-- **`ath79-i2s.ko`** — platformdriver voor de AR9341 stereo/I2S-controller: MBOX-DMA, audio-PLL (fractional-N) en klokconfiguratie.
-- **`ak4430et.ko`** — codec-driver voor de AKM AK4430ET DAC (klok-slave, geen registerinterface).
+- **`ath79-i2s.ko`** — platform driver for the AR9341 stereo/I2S controller: MBOX DMA, audio PLL (fractional-N), and clock configuration.
+- **`ak4430et.ko`** — codec driver for the AKM AK4430ET DAC (clock slave, no register interface).
 
-| Eigenschap | Waarde |
+| Property | Value |
 |------------|--------|
-| ALSA-apparaat | `hw:0,0` (afspelen, stereo) |
-| Formaten | S16_LE, S16_BE, S32_BE |
-| Samplerates | 22,05 – 96 kHz (32 / 44,1 / 48 kHz elektrisch geverifieerd) |
-| Klokken | MCLK = 512fs (GPIO14), BICK = 64fs (GPIO13), LRCK = fs (GPIO12), SDTO = GPIO15 |
+| ALSA device | `hw:0,0` (playback, stereo) |
+| Formats | S16_LE, S16_BE, S32_BE |
+| Sample rates | 22.05 – 96 kHz (32 / 44.1 / 48 kHz electrically verified) |
+| Clocks | MCLK = 512fs (GPIO14), BICK = 64fs (GPIO13), LRCK = fs (GPIO12), SDTO = GPIO15 |
 
-Afspelen:
+Playback:
 
 ```bash
-aplay -D hw:0,0 muziek.wav    # 48 kHz, S16_LE, stereo
+aplay -D hw:0,0 music.wav    # 48 kHz, S16_LE, stereo
 ```
 
-### Belangrijkste bevinding
+### Key finding
 
-De AK4430 eist een bitclock van **minimaal 48fs**. De AR9341 levert bij 16-bit data standaard 32fs; het `I2S_WORD_SIZE`-bit in `STEREO_CONFIG` moet daarom óók bij S8/S16 gezet worden, zodat BICK op 64fs staat. Zonder die instelling produceert de DAC alleen een harde 6 kHz-brom. Zie [`gramofon_logboek.md`](gramofon_logboek.md) voor het volledige onderzoeksverslag.
+The AK4430 requires a bit clock of **at least 48fs**. The AR9341 defaults to 32fs for 16-bit data; the `I2S_WORD_SIZE` bit in `STEREO_CONFIG` must therefore also be set for S8/S16, so that BICK runs at 64fs. Without that setting, the DAC only produces a harsh 6 kHz drone. See [`gramofon_logboek.md`](gramofon_logboek.md) for the full investigation log.
 
-### Beperkingen
+### Limitations
 
-- **RAM**: 64 MB (≈ 56 MB bruikbaar). `/tmp` is tmpfs; houd audiobestanden daar ≤ 12 MB, anders volgt een OOM-crash.
-- **Streamen over ssh** (`... | ssh aplay -`) hapert: dropbear-encryptie is te zwaar voor de 535 MHz-MIPS. Kopieer bestanden vooraf naar `/tmp`, of gebruik een onversleuteld transport.
-- **S24- en S32_LE-formaten** zijn bewust niet geadverteerd: het 24-bit FIFO-pad kan het apparaat laten hangen en `PCM_SWAP` byteswapt per 16-bit halfwoord (verhaspelt 32-bit LE).
+- **RAM**: 64 MB (≈ 56 MB usable). `/tmp` is tmpfs; keep audio files there ≤ 12 MB, otherwise an OOM crash follows.
+- **Streaming over ssh** (`... | ssh aplay -`) stutters: dropbear encryption is too heavy for the 535 MHz MIPS core. Copy files to `/tmp` beforehand, or use an unencrypted transport.
+- **S24 and S32_LE formats** are deliberately not advertised: the 24-bit FIFO path can hang the device, and `PCM_SWAP` byte-swaps per 16-bit half-word (garbles 32-bit LE).
 
-## Lokaal bouwen
+## Building locally
 
 ```bash
 git clone https://github.com/letatcest/gramofon-openwrt
@@ -98,23 +98,23 @@ chmod +x build_openwrt.sh
 ./build_openwrt.sh
 ```
 
-Builds against OpenWrt **v24.10.6** (latest stable). Duurt 30–90 minuten bij de eerste keer.
+Builds against OpenWrt **v24.10.6** (latest stable). Takes 30–90 minutes on the first run.
 
 ## Status
 
-- [x] Hardware geïdentificeerd
-- [x] UART/U-Boot toegang
-- [x] DTS-bestand aangemaakt
+- [x] Hardware identified
+- [x] UART/U-Boot access
+- [x] DTS file created
 - [x] GitHub Actions build pipeline
-- [x] Build geverifieerd succesvol (OpenWrt 24.10.6, kernel 6.6.127)
-- [x] Geflasht en getest — OpenWrt boot, Ethernet werkt, WiFi werkend (AP-modus)
-- [x] **Audio (AK4430ET) werkend** — schone muziekweergave, lineariteit en PLL-omschakeling (32/44,1/48 kHz) geverifieerd (2026-07-15)
-- [ ] GPIO-nummers voor LED's en resetknop verifiëren (resetknop stond fout op GPIO12 = LRCK; uit de DTS verwijderd)
-- [ ] Ethernet PHY-configuratie verifiëren (AR9341 + Atheros S27)
-- [ ] S24-hangbug in het FIFO-pad afvangen
-- [ ] Bijgewerkt DTS-image flashen en diagnostische module-parameters opruimen
-- [ ] Streamen vanaf standaard-telefoonapps (DLNA/UPnP-renderer of AirPlay)
+- [x] Build verified successful (OpenWrt 24.10.6, kernel 6.6.127)
+- [x] Flashed and tested — OpenWrt boots, Ethernet works, WiFi working (AP mode)
+- [x] **Audio (AK4430ET) working** — clean music playback, linearity and PLL switching (32/44.1/48 kHz) verified (2026-07-15)
+- [ ] Verify GPIO numbers for LEDs and reset button (reset button was incorrectly on GPIO12 = LRCK; removed from the DTS)
+- [ ] Verify Ethernet PHY configuration (AR9341 + Atheros S27)
+- [ ] Trap the S24 hang bug in the FIFO path
+- [ ] Flash the updated DTS image and clean up diagnostic module parameters
+- [ ] Streaming from standard phone apps (DLNA/UPnP renderer or AirPlay)
 
-## Bijdragen
+## Contributing
 
-Heb je een Gramofon en wil je helpen testen? Issues en pull requests zijn welkom. Met name GPIO-nummers voor LED's en de exacte Ethernet PHY-configuratie zijn nog niet geverifieerd op hardware.
+Do you have a Gramofon and want to help test? Issues and pull requests are welcome. In particular, the GPIO numbers for the LEDs and the exact Ethernet PHY configuration have not yet been verified on hardware.

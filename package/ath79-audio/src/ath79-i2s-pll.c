@@ -33,19 +33,20 @@ struct ath79_pll_config {
 };
 
 /*
- * MCLK-ratio aangepast voor de AK4430: die accepteert in Normal Speed Mode
- * (t/m 48 kHz) alleen 512fs/768fs/1152fs — géén 256fs zoals de originele
- * QCA-tabel levert.  Daarom extdiv 6→3 (MCLK ×2 = 512fs) en posedge ×2
- * zodat BICK op 64fs blijft.  88.2/96 kHz (Double Speed) mag wél 256fs.
+ * MCLK ratio adjusted for the AK4430: in Normal Speed Mode (up to 48 kHz)
+ * it only accepts 512fs/768fs/1152fs — NOT 256fs as the original QCA
+ * table produces.  Hence extdiv 6→3 (MCLK ×2 = 512fs) and posedge ×2
+ * so BICK stays at 64fs.  88.2/96 kHz (Double Speed) may use 256fs.
  */
 static const struct ath79_pll_config pll_cfg_25MHz[] = {
-	/* rate: extdiv/posedge → MCLK-ratio, BICK altijd 64fs */
+	/* rate: extdiv/posedge → MCLK ratio, BICK always 64fs */
 	{ 22050, 0x15, 0x2B442, 0x3, 0, 0x6, 0x1, 4, 0x4, 0x3d, 0x6 }, /* 512fs */
 	{ 32000, 0x17, 0x24F76, 0x3, 0, 0x3, 0x1, 6, 0x4, 0x3d, 0x6 }, /* 768fs */
-	/* 44.1k-familie: VCO 541,9 MHz (divint 0x15) geeft op de AR9341 een
-	 * instabiele klok (DAC-ratio-detect flipt, "motorgeluid") hoewel hij
-	 * binnen het 400-750 MHz-bereik valt.  VCO 722,53 MHz met even
-	 * EXT_DIV=4 (50% duty, vereist per datasheet) is wél stabiel. */
+	/* 44.1k family: VCO 541.9 MHz (divint 0x15) produces an unstable
+	 * clock on the AR9341 (DAC ratio-detect flips, "motor noise")
+	 * even though it falls within the 400-750 MHz range.  VCO 722.53 MHz
+	 * with an even EXT_DIV=4 (50% duty, required per datasheet) is
+	 * stable. */
 	{ 44100, 0x1c, 0x39B02, 0x3, 0, 0x4, 0x1, 4, 0x4, 0x3d, 0x6 }, /* 512fs */
 	{ 48000, 0x17, 0x24F76, 0x3, 0, 0x3, 0x1, 4, 0x4, 0x3d, 0x6 }, /* 512fs */
 	{ 88200, 0x15, 0x2B442, 0x3, 0, 0x3, 0x1, 2, 0x4, 0x3d, 0x6 }, /* 256fs */
@@ -63,14 +64,14 @@ static const struct ath79_pll_config pll_cfg_40MHz[] = {
 	{ 0,     0,    0,       0,   0, 0,   0,   0, 0,   0,    0   },
 };
 
-/* Runtime-schakelbare 44,1kHz-variant (A/B-test zonder herbuild):
- * 0 = VCO 722,53 MHz, postpll /8, extdiv 4 (huidige rij)
- * 1 = VCO 541,90 MHz, postpll /4, extdiv 6 (bewezen VCO, even extdiv)
- * 2 = VCO 541,90 MHz, postpll /8, extdiv 3 (QSDK-conform, oneven extdiv)
- * Alle drie: MCLK = 512fs = 22,5792 MHz, posedge 4 → BICK 64fs. */
+/* Runtime-switchable 44.1kHz variant (A/B testing without a rebuild):
+ * 0 = VCO 722.53 MHz, postpll /8, extdiv 4 (current row)
+ * 1 = VCO 541.90 MHz, postpll /4, extdiv 6 (proven VCO, even extdiv)
+ * 2 = VCO 541.90 MHz, postpll /8, extdiv 3 (QSDK-conformant, odd extdiv)
+ * All three: MCLK = 512fs = 22.5792 MHz, posedge 4 → BICK 64fs. */
 static int pll_44k_variant;
 module_param(pll_44k_variant, int, 0644);
-MODULE_PARM_DESC(pll_44k_variant, "44,1kHz PLL-variant: 0=722M/ext4 1=541M/div4/ext6 2=541M/div8/ext3");
+MODULE_PARM_DESC(pll_44k_variant, "44.1kHz PLL variant: 0=722M/ext4 1=541M/div4/ext6 2=541M/div8/ext3");
 
 /* ── Low-level PLL register helpers ─────────────────────────────────── */
 
@@ -83,7 +84,7 @@ static void pll_set_target_div(struct ath79_i2s_dev *adev,
 	t = pll_rr(adev, AR934X_PLL_AUDIO_MOD_REG);
 	if (t & AR934X_PLL_AUDIO_MOD_START)
 		dev_info(adev->dev,
-			 "audio PLL: START-bit stond AAN (MOD=0x%08x) — gewist, PLL volgt TGT nu direct\n",
+			 "audio PLL: START bit was ON (MOD=0x%08x) — cleared, PLL now follows TGT directly\n",
 			 t);
 	t &= ~((AR934X_PLL_AUDIO_MOD_TGT_DIV_INT_MASK
 		<< AR934X_PLL_AUDIO_MOD_TGT_DIV_INT_SHIFT) |
@@ -251,9 +252,9 @@ static u32 dpll_sqsum_dvc(struct ath79_i2s_dev *adev)
 		& AR934X_DPLL_3_SQSUM_DVC_MASK;
 }
 
-/* Logt target- vs. fysiek-gebruikte divider (CURRENT_AUDIO_PLL_MODULATION).
- * Als CUR niet gelijk is aan TGT gebruikt de VCO een andere frequentie dan
- * geprogrammeerd — precies wat we bij 44,1 kHz verdenken. */
+/* Logs target vs. physically-used divider (CURRENT_AUDIO_PLL_MODULATION).
+ * If CUR doesn't match TGT, the VCO is running at a different frequency
+ * than programmed — exactly what we suspect at 44.1 kHz. */
 static void pll_log_current(struct ath79_i2s_dev *adev, const char *tag)
 {
 	u32 mod = pll_rr(adev, AR934X_PLL_AUDIO_MOD_REG);
@@ -326,13 +327,13 @@ int ath79_audio_set_freq(struct ath79_i2s_dev *adev, int freq)
 	if (freq == 44100 && ref_rate == 25000000 && pll_44k_variant) {
 		vcfg = *cfg;
 		switch (pll_44k_variant) {
-		case 1:	/* VCO 541,9008 MHz / postpll 4 / extdiv 6 (even) */
+		case 1:	/* VCO 541.9008 MHz / postpll 4 / extdiv 6 (even) */
 			vcfg.divint = 0x15;
 			vcfg.divfrac = 0x2B442;
 			vcfg.postpllpwd = 0x2;
 			vcfg.extdiv = 0x6;
 			break;
-		case 2:	/* QSDK-conform: VCO 541,9008 / postpll 8 / extdiv 3 */
+		case 2:	/* QSDK-conformant: VCO 541.9008 / postpll 8 / extdiv 3 */
 			vcfg.divint = 0x15;
 			vcfg.divfrac = 0x2B442;
 			vcfg.postpllpwd = 0x3;
@@ -340,11 +341,11 @@ int ath79_audio_set_freq(struct ath79_i2s_dev *adev, int freq)
 			break;
 		}
 		cfg = &vcfg;
-		dev_info(adev->dev, "44,1kHz-variant %d actief (divint=0x%x extdiv=%u postpll=%u)\n",
+		dev_info(adev->dev, "44.1kHz variant %d active (divint=0x%x extdiv=%u postpll=%u)\n",
 			 pll_44k_variant, cfg->divint, cfg->extdiv, cfg->postpllpwd);
 	}
 
-	pll_log_current(adev, "vóór herprogrammering");
+	pll_log_current(adev, "before reprogramming");
 
 	/* Converge the DPLL — both loops are bounded to avoid starving
 	 * the single-core MIPS CPU with infinite udelay() spins. */
@@ -400,7 +401,7 @@ int ath79_audio_set_freq(struct ath79_i2s_dev *adev, int freq)
 	dev_info(adev->dev, "audio PLL configured: sqsum_dvc=0x%x retries_left=%d\n",
 		 dpll_sqsum_dvc(adev), retries);
 
-	pll_log_current(adev, "na herprogrammering");
+	pll_log_current(adev, "after reprogramming");
 
 	return 0;
 }

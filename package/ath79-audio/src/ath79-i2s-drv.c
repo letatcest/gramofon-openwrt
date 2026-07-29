@@ -44,43 +44,43 @@
 static struct ath79_i2s_dev *ath79_i2s_dev_g;
 
 /*
- * Diagnostiek: zet kandidaat-GPIO's (mogelijk SMUTE/amp-enable van de
- * AK4430) op een vast niveau tijdens playback.  -1 = niet aanraken,
- * 0 = alle kandidaten laag, 1 = alle kandidaten hoog.
- * Schrijfbaar via /sys/module/ath79_i2s/parameters/force_gpio_level.
+ * Diagnostics: set candidate GPIOs (possibly SMUTE/amp-enable of the
+ * AK4430) to a fixed level during playback.  -1 = don't touch,
+ * 0 = all candidates low, 1 = all candidates high.
+ * Writable via /sys/module/ath79_i2s/parameters/force_gpio_level.
  */
 static int force_gpio_level = -1;
 module_param(force_gpio_level, int, 0644);
 MODULE_PARM_DESC(force_gpio_level,
-		 "Kandidaat-GPIO's forceren: -1=uit, 0=laag, 1=hoog");
+		 "Force candidate GPIOs: -1=off, 0=low, 1=high");
 
 /*
- * Bitmask van GPIO's die geforceerd mogen worden (bit N = GPIO N).
- * Zo kan de test per subset lopen zonder herbouwen.  GPIO's waarvan de
- * output-mux niet 0 (gewone GPIO) is worden ALTIJD overgeslagen: die
- * dragen een actieve functie (SPI-flash mux 9/10/11, I2S 12-15, ...)
- * en aanraken daarvan sloopt het rootfs of de audio-pads zelf.
+ * Bitmask of GPIOs allowed to be forced (bit N = GPIO N).
+ * Lets the test run per subset without rebuilding.  GPIOs whose
+ * output mux is not 0 (plain GPIO) are ALWAYS skipped: those
+ * carry an active function (SPI flash mux 9/10/11, I2S 12-15, ...)
+ * and touching them breaks the rootfs or the audio pads themselves.
  */
 static uint force_gpio_mask;
 module_param(force_gpio_mask, uint, 0644);
 MODULE_PARM_DESC(force_gpio_mask,
-		 "Bitmask van te forceren GPIO's (0 = geen)");
+		 "Bitmask of GPIOs to force (0 = none)");
 
 /*
- * Pinnen in dit mask (én in force_gpio_mask) worden ook geforceerd als
- * hun output-mux niet 0 is: de mux wordt dan eerst naar 0 (GPIO) gezet.
- * Bedoeld voor GPIO16 (mux 77 → vermoedelijk SMUTE van de AK4430).
+ * Pins in this mask (and also in force_gpio_mask) are forced even if
+ * their output mux is not 0: the mux is first set to 0 (GPIO).
+ * Intended for GPIO16 (mux 77 → presumably SMUTE of the AK4430).
  */
 static uint force_gpio_unmux_mask;
 module_param(force_gpio_unmux_mask, uint, 0644);
 MODULE_PARM_DESC(force_gpio_unmux_mask,
-		 "Bitmask van GPIO's waarvan de mux naar 0 mag (override guard)");
+		 "Bitmask of GPIOs whose mux may be forced to 0 (override guard)");
 
 /*
- * Direct (bij schrijven) een output-mux op een GPIO zetten:
+ * Directly (on write) set an output mux on a GPIO:
  *   echo "13 15" > /sys/module/ath79_i2s/parameters/mux_set
- * zet GPIO13 op mux 15 (I2S_MCK) en maakt hem output.  Voor het
- * opsporen van de werkelijke I2S-routing naar de AK4430.
+ * sets GPIO13 to mux 15 (I2S_MCK) and makes it an output.  Used to
+ * trace the actual I2S routing to the AK4430.
  */
 static int mux_set_set(const char *val, const struct kernel_param *kp)
 {
@@ -108,9 +108,9 @@ static const struct kernel_param_ops mux_set_ops = {
 	.set = mux_set_set,
 };
 module_param_cb(mux_set, &mux_set_ops, NULL, 0200);
-MODULE_PARM_DESC(mux_set, "Schrijf 'GPIO MUX' om een output-mux direct te zetten");
+MODULE_PARM_DESC(mux_set, "Write 'GPIO MUX' to set an output mux directly");
 
-/* echo 1 > .../dump_gpio logt alle GPIO-registers naar dmesg */
+/* echo 1 > .../dump_gpio logs all GPIO registers to dmesg */
 static int dump_gpio_set(const char *val, const struct kernel_param *kp)
 {
 	struct ath79_i2s_dev *adev = ath79_i2s_dev_g;
@@ -134,12 +134,12 @@ static const struct kernel_param_ops dump_gpio_ops = {
 	.set = dump_gpio_set,
 };
 module_param_cb(dump_gpio, &dump_gpio_ops, NULL, 0200);
-MODULE_PARM_DESC(dump_gpio, "Schrijf 1 om GPIO-registers naar dmesg te loggen");
+MODULE_PARM_DESC(dump_gpio, "Write 1 to log GPIO registers to dmesg");
 
-/* echo <gpio> > .../measure_freq telt flanken op GPIO_IN over een
- * ktime-venster en logt de gemeten frequentie.  Bruikbaar tot enkele
- * honderden kHz (sampling ~5-10 MHz); bedoeld om de echte LRCK (fs)
- * te verifiëren tegen de geconfigureerde samplerate. */
+/* echo <gpio> > .../measure_freq counts edges on GPIO_IN over a
+ * ktime window and logs the measured frequency.  Usable up to a few
+ * hundred kHz (sampling ~5-10 MHz); intended to verify the actual
+ * LRCK (fs) against the configured sample rate. */
 static int measure_freq_set(const char *val, const struct kernel_param *kp)
 {
 	struct ath79_i2s_dev *adev = ath79_i2s_dev_g;
@@ -168,7 +168,7 @@ static int measure_freq_set(const char *val, const struct kernel_param *kp)
 	ns = ktime_to_ns(ktime_sub(t1, t0));
 	hz = ns ? div64_u64(edges * (u64)NSEC_PER_SEC, 2 * ns) : 0;
 	dev_info(adev->dev,
-		 "measure_freq: GPIO%u %llu flanken in %llu ns -> %llu Hz\n",
+		 "measure_freq: GPIO%u %llu edges in %llu ns -> %llu Hz\n",
 		 gpio, edges, ns, hz);
 	return 0;
 }
@@ -177,7 +177,7 @@ static const struct kernel_param_ops measure_freq_ops = {
 	.set = measure_freq_set,
 };
 module_param_cb(measure_freq, &measure_freq_ops, NULL, 0200);
-MODULE_PARM_DESC(measure_freq, "Schrijf GPIO-nummer om de frequentie op die pin te meten");
+MODULE_PARM_DESC(measure_freq, "Write a GPIO number to measure the frequency on that pin");
 
 static void ath79_force_candidate_gpios(struct ath79_i2s_dev *adev, int level)
 {
@@ -199,7 +199,7 @@ static void ath79_force_candidate_gpios(struct ath79_i2s_dev *adev, int level)
 			if (!(force_gpio_unmux_mask & BIT(gpio))) {
 				skipped |= BIT(gpio);
 				dev_info(adev->dev,
-					 "force_gpio: GPIO%d overgeslagen (mux=%u in gebruik)\n",
+					 "force_gpio: GPIO%d skipped (mux=%u in use)\n",
 					 gpio, mux);
 				continue;
 			}
@@ -236,8 +236,8 @@ void ath79_stereo_reset(struct ath79_i2s_dev *adev)
 {
 	u32 t;
 
-	/* RESET-bit is self-clearing; de QCA-referentie schrijft hem alleen
-	 * en wist hem niet handmatig. */
+	/* RESET bit is self-clearing; the QCA reference only writes it
+	 * and never clears it manually. */
 	spin_lock(&adev->stereo_lock);
 	t = stereo_rr(adev, AR934X_STEREO_REG_CONFIG);
 	t |= AR934X_STEREO_CONFIG_RESET;
@@ -298,26 +298,28 @@ static int ath79_i2s_startup(struct snd_pcm_substream *ss,
 	if (!snd_soc_dai_active(dai)) {
 		u32 vol_before = stereo_rr(adev, AR934X_STEREO_REG_VOLUME);
 
-		/* I2S_DELAY MOET AAN: de AK4430 staat via DIF (pull-up) in
-		 * I²S-modus = data 1 BICK na de LRCK-flank.  4a1671a haalde
-		 * dit bit weg ("conform QSDK") — maar de QSDK-referentie
-		 * stuurt de ínterne codec aan, niet een externe I²S-DAC.
-		 * Zonder delay leest de DAC elk sample 1 bit verschoven =
-		 * de zware signaal-gecorreleerde vervorming sinds dinsdag.
-		 * Geen SPDIF_ENABLE (idem 8fd3200, de schone build). */
+		/* I2S_DELAY MUST BE ON: the AK4430 is wired via DIF (pull-up)
+		 * into I²S mode = data 1 BICK after the LRCK edge.  4a1671a
+		 * removed this bit ("per QSDK") — but the QSDK reference
+		 * drives the internal codec, not an external I²S DAC.
+		 * Without the delay, the DAC reads every sample shifted by
+		 * 1 bit = the heavy signal-correlated distortion since
+		 * Tuesday.  No SPDIF_ENABLE (same as 8fd3200, the clean
+		 * build). */
 		stereo_wr(adev, AR934X_STEREO_REG_CONFIG,
 			  AR934X_STEREO_CONFIG_I2S_ENABLE   |
 			  AR934X_STEREO_CONFIG_I2S_DELAY     |
 			  AR934X_STEREO_CONFIG_SAMPLE_CNT_CLEAR_TYPE |
 			  AR934X_STEREO_CONFIG_MASTER);
-		/* VOLUME (0x04): sign-magnitude per kanaal (bit 4 = negatief,
-		 * zie QSDK internal-codec), reset 0x0 = 0 dB.  De eerdere
-		 * write van 8 per kanaal (sinds 4a1671a) bleek fors te
-		 * verzwakken (empirisch: verwijderen maakte alles veel
-		 * luider); niet de bron van de vervorming.  Op 0 dB houden. */
+		/* VOLUME (0x04): sign-magnitude per channel (bit 4 = negative,
+		 * see QSDK internal codec), reset 0x0 = 0 dB.  The earlier
+		 * write of 8 per channel (since 4a1671a) turned out to
+		 * attenuate heavily (empirically: removing it made
+		 * everything much louder); not the source of the
+		 * distortion.  Keep it at 0 dB. */
 		stereo_wr(adev, AR934X_STEREO_REG_VOLUME, 0);
 		dev_info(adev->dev,
-			 "startup: VOLUME was=0x%08x nu=0x0 (0 dB)\n",
+			 "startup: VOLUME was=0x%08x now=0x0 (0 dB)\n",
 			 vol_before);
 		ath79_stereo_reset(adev);
 	}
@@ -345,16 +347,16 @@ static int ath79_i2s_hw_params(struct snd_pcm_substream *ss,
 	if (ret)
 		return ret;
 
-	/* I2S_WORD_SIZE MOET óók bij 8/16-bit data AAN (= 32-bit I2S-
-	 * slots, data links-uitgelijnd per AR9344-datasheet).  Met
-	 * I2S_WORD_SIZE=0 wordt het slot 16 bits en zakt BICK naar 32fs
-	 * — maar de AK4430 is 24-bit-only en eist BICK ≥ 48fs (datasheet
-	 * fig. 3/4).  Zijn 24-bit schuifregister krijgt dan per slot maar
-	 * 16 klokken: MSB-byte = LSB-byte van het vórige sample →
-	 * volle-schaal tekenblokgolf + hash, echte toon ~48 dB te zacht.
-	 * Dit was dé bron van de "6 kHz-brom" sinds het eerste geluid.
-	 * (QSDK zet dit bit alleen bij 24/32-bit: die stuurt de interne
-	 * codec aan, geen externe 24-bit DAC.) */
+	/* I2S_WORD_SIZE MUST ALSO be ON for 8/16-bit data (= 32-bit I2S
+	 * slots, data left-justified per the AR9344 datasheet).  With
+	 * I2S_WORD_SIZE=0 the slot becomes 16 bits and BICK drops to 32fs
+	 * — but the AK4430 is 24-bit-only and requires BICK ≥ 48fs
+	 * (datasheet fig. 3/4).  Its 24-bit shift register then only
+	 * gets 16 clocks per slot: MSB byte = LSB byte of the previous
+	 * sample → full-scale square wave + hash, the real tone ~48 dB
+	 * too quiet.  This was THE source of the "6 kHz drone" since the
+	 * very first sound.  (QSDK only sets this bit for 24/32-bit: it
+	 * drives the internal codec, not an external 24-bit DAC.) */
 	switch (params_format(params)) {
 	case SNDRV_PCM_FORMAT_S8:
 		mask |= AR934X_STEREO_CONFIG_DATA_WORD_8
@@ -401,7 +403,7 @@ static int ath79_i2s_hw_params(struct snd_pcm_substream *ss,
 	stereo_wr(adev, AR934X_STEREO_REG_CONFIG, t);
 	spin_unlock(&adev->stereo_lock);
 
-	/* QCA-referentie: stereo-blok resetten na elke format-wijziging */
+	/* QCA reference: reset the stereo block after every format change */
 	ath79_stereo_reset(adev);
 
 	dev_info(adev->dev, "hw_params: rate=%u stereo_cfg=0x%08x posedge=%u\n",
@@ -468,7 +470,7 @@ static const struct snd_pcm_hardware ath79_pcm_hardware = {
 	.fifo_size      = 0,
 };
 
-/* ── DMA poll worker (diagnostiek, elke 100 ms) ─────────────────────── */
+/* ── DMA poll worker (diagnostics, every 100 ms) ─────────────────────── */
 
 static void ath79_poll_worker(struct work_struct *work)
 {
@@ -578,9 +580,10 @@ static void ath79_pcm_handle_rx_complete(struct ath79_i2s_dev *adev,
 				 source, fifo_st, rxbase, (u32)d0->phys,
 				 first[0], d0_kseg1);
 		}
-		/* Géén RESUME schrijven — de QCA-referentie doet dat nergens.
-		 * Een RESUME na TRIGGER_STOP herstart de engine, die dan
-		 * eeuwig door de (straks vrijgegeven) ring blijft lopen. */
+		/* Do NOT write RESUME — the QCA reference never does.
+		 * A RESUME after TRIGGER_STOP restarts the engine, which
+		 * then keeps running forever through the (soon to be
+		 * freed) ring. */
 		return;
 	}
 
@@ -614,8 +617,8 @@ static irqreturn_t ath79_pcm_interrupt(int irq, void *dev_id)
 	dma_wr(adev, AR934X_DMA_REG_MBOX_INT_STATUS, status);
 	dma_rr(adev, AR934X_DMA_REG_MBOX_INT_STATUS);  /* flush */
 
-	/* Alleen de eerste paar interrupts loggen — per-ISR logging over de
-	 * seriële console verstikt de CPU volledig (ISR elke ~5 ms). */
+	/* Only log the first few interrupts — per-ISR logging over the
+	 * serial console chokes the CPU completely (ISR every ~5 ms). */
 	if (atomic_read(&adev->irq_count) <= 5)
 		dev_info(adev->dev,
 			 "ISR #%d: status=0x%08x rx=%d tx=%d playback=%p\n",

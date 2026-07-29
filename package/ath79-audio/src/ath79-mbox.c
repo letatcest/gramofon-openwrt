@@ -86,7 +86,7 @@ void ath79_mbox_dma_start(struct ath79_i2s_dev *adev,
 		 gate0, gate1, rxctl, txctl,
 		 adev->reset_base ? __raw_readl(adev->reset_base + 0x1c) : 0);
 
-	/* START only, conform QCA-referentie (nu op het juiste bit, BIT(1)) */
+	/* START only, per QCA reference (now on the correct bit, BIT(1)) */
 	if (rtpriv->direction == SNDRV_PCM_STREAM_PLAYBACK) {
 		dma_wr(adev, AR934X_DMA_REG_MBOX0_DMA_RX_CONTROL,
 		       AR934X_DMA_MBOX_DMA_CONTROL_START);
@@ -128,9 +128,9 @@ void ath79_mbox_dma_reset(struct ath79_i2s_dev *adev)
 	u32 t;
 
 	/*
-	 * Volledige MBOX-modulereset, zoals de QCA-referentie doet bij elke
-	 * eerste stream (prepare).  Alleen een FIFO-reset laat de DMA-engine
-	 * in een onbruikbare staat achter na een STOP.
+	 * Full MBOX module reset, as the QCA reference does on every
+	 * first stream (prepare).  A FIFO reset alone leaves the DMA
+	 * engine in an unusable state after a STOP.
 	 */
 	if (adev->reset_base) {
 		spin_lock(&ath79_mbox_lock);
@@ -168,11 +168,11 @@ void ath79_mbox_dma_prepare(struct ath79_i2s_dev *adev,
 	       AR934X_DMA_MBOX0_INT_TX_COMPLETE);
 
 	/*
-	 * POLICY conform QCA-referentie: QUANTUM-bit aan voor de actieve
-	 * richting, FIFO-threshold 6 op bits 7:4 (TX_FIFO_THRESH_SHIFT wordt
-	 * in het origineel voor beide richtingen gebruikt).  De eerdere
-	 * "QUANTUM blokkeert alles"-bevinding stamt uit de periode dat de
-	 * START/STOP-bits omgewisseld waren en is daarmee ongeldig.
+	 * POLICY per QCA reference: QUANTUM bit on for the active
+	 * direction, FIFO threshold 6 on bits 7:4 (TX_FIFO_THRESH_SHIFT is
+	 * used for both directions in the original).  The earlier
+	 * "QUANTUM blocks everything" finding dates from the period when
+	 * the START/STOP bits were swapped and is therefore invalid.
 	 */
 	if (rtpriv->direction == SNDRV_PCM_STREAM_PLAYBACK) {
 		t = dma_rr(adev, AR934X_DMA_REG_MBOX_DMA_POLICY);

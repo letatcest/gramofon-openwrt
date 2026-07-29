@@ -38,14 +38,14 @@
 		label-mac-device = &eth0;
 	};
 
-	// LET OP (2026-07-10): de oorspronkelijke gegokte GPIO's bleken audio-
-	// pinnen te zijn! Empirisch vastgesteld: MCLK=GPIO14, BICK=GPIO13,
-	// LRCK=GPIO12, SDTO=GPIO15. De "reset"-knop op GPIO12 veroorzaakte
-	// procd-reboots (korte LRCK-stops) en FACTORY RESETs (lange stops) —
-	// dé verklaring van de overlay-wipe-lus. LED-GPIO's 11/14 waren ook
-	// fout (11 togglet niet; 14 = MCLK). Echte LED's zitten op GPIO 0-3;
-	// GPIO 16 is mogelijk de echte knop (input, onbevestigd) — pas na
-	// verificatie toevoegen.
+	// NOTE (2026-07-10): the originally guessed GPIOs turned out to be
+	// audio pins! Empirically established: MCLK=GPIO14, BICK=GPIO13,
+	// LRCK=GPIO12, SDTO=GPIO15. The "reset" button on GPIO12 caused
+	// procd reboots (short LRCK stops) and FACTORY RESETs (long stops) —
+	// the explanation for the overlay-wipe loop. LED GPIOs 11/14 were
+	// also wrong (11 doesn't toggle; 14 = MCLK). The real LEDs are on
+	// GPIO 0-3; GPIO 16 might be the real button (input, unconfirmed) —
+	// add only after verification.
 	leds {
 		compatible = "gpio-leds";
 
@@ -191,10 +191,10 @@
 
 		#sound-dai-cells = <0>;
 
-		/* I2S GPIO pin assignments — multimeter-bewezen op de Gramofon
-		 * (2026-07-08): MCLK=GPIO14 -> DAC-pin 4, BICK=GPIO13 -> pin 5,
-		 * LRCK=GPIO12 -> pin 7, SDTO=GPIO15 -> pin 6. Dit wijkt af van
-		 * de CUS227-referentie (22/21/20/18); zie ath79-i2s-drv.c. */
+		/* I2S GPIO pin assignments — multimeter-verified on the Gramofon
+		 * (2026-07-08): MCLK=GPIO14 -> DAC pin 4, BICK=GPIO13 -> pin 5,
+		 * LRCK=GPIO12 -> pin 7, SDTO=GPIO15 -> pin 6. This deviates from
+		 * the CUS227 reference (22/21/20/18); see ath79-i2s-drv.c. */
 		qca,i2s-mclk-gpio = <14>;
 		qca,i2s-bick-gpio = <13>;
 		qca,i2s-lrck-gpio = <12>;

@@ -58,8 +58,8 @@
 #define AR934X_DMA_REG_MBOX0_DMA_RX_CONTROL	0x1c
 #define AR934X_DMA_REG_MBOX0_DMA_TX_DESCRIPTOR_BASE 0x20
 #define AR934X_DMA_REG_MBOX0_DMA_TX_CONTROL	0x24
-/* Bitposities conform QCA-referentie (ar71xx_regs.h uit QSDK):
- * STOP=BIT(0), START=BIT(1) — eerder stonden deze omgewisseld. */
+/* Bit positions per QCA reference (ar71xx_regs.h from QSDK):
+ * STOP=BIT(0), START=BIT(1) — these used to be swapped. */
 #define AR934X_DMA_MBOX_DMA_CONTROL_STOP	BIT(0)
 #define AR934X_DMA_MBOX_DMA_CONTROL_START	BIT(1)
 #define AR934X_DMA_MBOX_DMA_CONTROL_RESUME	BIT(2)
@@ -91,16 +91,16 @@
 #define AR934X_PLL_AUDIO_CONFIG_REFDIV_MASK	0xf
 #define AR934X_PLL_AUDIO_CONFIG_BYPASS		BIT(4)
 #define AR934X_PLL_AUDIO_CONFIG_PLLPWD		BIT(5)
-/* MOD-register layout conform QCA-referentie: INT op bits 6:1, FRAC op 28:11 */
+/* MOD register layout per QCA reference: INT at bits 6:1, FRAC at 28:11 */
 #define AR934X_PLL_AUDIO_MOD_TGT_DIV_FRAC_SHIFT 11
 #define AR934X_PLL_AUDIO_MOD_TGT_DIV_FRAC_MASK	0x3ffff  /* 18 bits */
 #define AR934X_PLL_AUDIO_MOD_TGT_DIV_INT_SHIFT	1
 #define AR934X_PLL_AUDIO_MOD_TGT_DIV_INT_MASK	0x3f
-/* START (bit 0): 0 = PLL volgt TGT_DIV direct; 1 = PLL volgt de trage
- * modulatie-ramp (stapgrootte in MOD_STEP) — moet voor ons UIT staan. */
+/* START (bit 0): 0 = PLL follows TGT_DIV directly; 1 = PLL follows the slow
+ * modulation ramp (step size in MOD_STEP) — must be OFF for us. */
 #define AR934X_PLL_AUDIO_MOD_START		BIT(0)
 #define AR934X_PLL_AUDIO_MOD_STEP_REG		0x38
-/* CURRENT: wat de PLL fysiek gebruikt (read-only): FRAC 27:10, INT 6:1 */
+/* CURRENT: what the PLL physically uses (read-only): FRAC 27:10, INT 6:1 */
 #define AR934X_PLL_AUDIO_CUR_MOD_REG		0x3c
 #define AR934X_PLL_AUDIO_CUR_FRAC_SHIFT		10
 #define AR934X_PLL_AUDIO_CUR_FRAC_MASK		0x3ffff
@@ -108,7 +108,7 @@
 #define AR934X_PLL_AUDIO_CUR_INT_MASK		0x3f
 
 /* Audio DPLL registers (offset from dpll_base 0x18116200)
- * Bitposities conform QCA-referentie (ar71xx_regs.h uit QSDK). */
+ * Bit positions per QCA reference (ar71xx_regs.h from QSDK). */
 #define AR934X_DPLL_REG_1			0x00
 #define AR934X_DPLL_REG_2			0x04
 #define AR934X_DPLL_REG_3			0x08
