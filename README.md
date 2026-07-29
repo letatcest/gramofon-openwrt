@@ -107,13 +107,14 @@ Builds against OpenWrt **v24.10.6** (latest stable). Takes 30–90 minutes on th
 - [x] DTS file created
 - [x] GitHub Actions build pipeline
 - [x] Build verified successful (OpenWrt 24.10.6, kernel 6.6.127)
-- [x] Flashed and tested — OpenWrt boots, Ethernet works, WiFi working (AP mode)
+- [x] Flashed and tested — OpenWrt boots, Ethernet works
 - [x] **Audio (AK4430ET) working** — clean music playback, linearity and PLL switching (32/44.1/48 kHz) verified (2026-07-15)
-- [ ] Verify GPIO numbers for LEDs and reset button (reset button was incorrectly on GPIO12 = LRCK; removed from the DTS)
-- [ ] Verify Ethernet PHY configuration (AR9341 + Atheros S27)
-- [ ] Trap the S24 hang bug in the FIFO path
-- [ ] Flash the updated DTS image and clean up diagnostic module parameters
-- [ ] Streaming from standard phone apps (DLNA/UPnP renderer or AirPlay)
+- [x] GPIO12 reset-button bug fixed structurally — the button was wired to GPIO12 (LRCK), causing an interrupt storm during playback; removed from the DTS and verified absent from the compiled DTB. LED GPIO numbers (candidates GPIO 0-3) are still unverified on hardware.
+- [ ] Verify Ethernet PHY/switch configuration (AR9341 + Atheros S27) — works in practice over eth1 (used extensively for SSH and streaming), but the switch/PHY setup itself has never been verified at the register level.
+- [ ] Trap the S24 hang bug in the FIFO path — currently only avoided indirectly: the codec driver's format list excludes S24, and ALSA's cpu/codec format intersection keeps it from being selected. The platform driver itself still has no explicit guard against it.
+- [x] Updated DTS image flashed (GPIO12 fix, plus a later fix for a trigger(START) busy-loop that could freeze the CPU) — diagnostic module parameters (`mux_set`, `dump_gpio`, `measure_freq`, `force_gpio_level`, `force_gpio_mask`, `force_gpio_unmux_mask`) are still present and have not been cleaned up.
+- [x] **Streaming from a phone** — achieved, but not via generic DLNA/UPnP apps: those (BubbleUPnP, Hi-Fi Cast, via upmpdcli) overwhelm the 56 MB of RAM and repeatedly crash. The working setup is mpd alone, controlled from a native MPD client (e.g. [M.A.L.P.](https://f-droid.org/en/packages/org.gateshipone.malp/) on Android) to play internet radio streams. AirPlay was considered (via librespot/shairport-sync) but its own RAM footprint and MIPS soft-float toolchain support make it unlikely to fare any better.
+- [ ] WiFi is currently disabled (module blacklisted at boot) to free up RAM headroom for streaming; the device is wired-Ethernet-only
 
 ## Contributing
 
