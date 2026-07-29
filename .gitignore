@@ -1,0 +1,24 @@
+# OpenWrt buildtree (eigen git-repo, hoort hier niet in)
+/openwrt/
+
+# Firmware-backups
+/backups/
+
+# Kernelmodule build-artefacten
+package/ath79-audio/src/*.ko
+package/ath79-audio/src/*.o
+package/ath79-audio/src/*.mod
+package/ath79-audio/src/*.mod.c
+package/ath79-audio/src/*.mod.o
+package/ath79-audio/src/.*.cmd
+package/ath79-audio/src/Module.symvers
+package/ath79-audio/src/modules.order
+
+# Testdata
+package/ath79-audio/test/
+
+# Losse media-/logbestanden aan de root
+/*.mp3
+/*.wav
+/*.image
+/build.log
