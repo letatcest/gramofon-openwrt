@@ -742,40 +742,13 @@ static int ath79_pcm_trigger(struct snd_soc_component *component,
 	struct ath79_pcm_rt_priv *rtpriv = ss->runtime->private_data;
 
 	switch (cmd) {
-	case SNDRV_PCM_TRIGGER_START: {
-		dev_info(adev->dev,
-			 "trigger START: stereo_cfg=0x%08x mclk_reg=0x%08x clkdiv_1c=0x%08x pll_cfg=0x%08x\n",
-			 stereo_rr(adev, AR934X_STEREO_REG_CONFIG),
-			 stereo_rr(adev, AR934X_STEREO_REG_MASTER_CLOCK),
-			 stereo_rr(adev, 0x1c),
-			 pll_rr(adev, AR934X_PLL_AUDIO_CONFIG_REG));
-		/* Verifieer dat de I2S GPIO-mux niet is overschreven */
-		dev_info(adev->dev,
-			 "trigger START: GPIO_OE=0x%08x FUNC4(16-19)=0x%08x FUNC5(20-23)=0x%08x GPIO_IN=0x%08x\n",
-			 __raw_readl(adev->gpio_base + 0x00),
-			 __raw_readl(adev->gpio_base + AR934X_GPIO_OUT_FUNCTION4),
-			 __raw_readl(adev->gpio_base + AR934X_GPIO_OUT_FUNCTION5),
-			 __raw_readl(adev->gpio_base + 0x04));
+	case SNDRV_PCM_TRIGGER_START:
 		/* Re-arm INT_ENABLE in case something cleared the bit since prepare() */
 		ath79_mbox_interrupt_enable(adev, AR934X_DMA_MBOX0_INT_RX_COMPLETE);
 		if (force_gpio_level >= 0 && force_gpio_mask)
 			ath79_force_candidate_gpios(adev, force_gpio_level);
 		ath79_mbox_dma_start(adev, rtpriv);
-		/* Diagnostiek: bemonster GPIO_IN en rapporteer welke pads
-		 * fysiek toggelen — bewijst of de I2S-signalen het SoC verlaten. */
-		{
-			u32 first = __raw_readl(adev->gpio_base + 0x04);
-			u32 toggled = 0;
-			int i;
-
-			for (i = 0; i < 20000; i++)
-				toggled |= __raw_readl(adev->gpio_base + 0x04) ^ first;
-			dev_info(adev->dev,
-				 "GPIO toggle-mask tijdens playback: 0x%08x (verwacht bits 18/20/21/22)\n",
-				 toggled);
-		}
 		break;
-	}
 	case SNDRV_PCM_TRIGGER_STOP:
 		adev->poll_active = false;
 		cancel_delayed_work_sync(&adev->poll_work);
