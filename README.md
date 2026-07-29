@@ -38,11 +38,11 @@ Connect via UART (J2 header, 115200 8N1), interrupt the boot within 1 second.
 
 ```
 # Set up networking
-setenv ipaddr 192.168.178.200
-setenv serverip 192.168.178.131   # IP of your TFTP server
+setenv ipaddr 192.168.1.200
+setenv serverip 192.168.1.10   # IP of your TFTP server
 
 # Test
-ping 192.168.178.131
+ping 192.168.1.10
 
 # Flash (expects fon2415.image on the TFTP server)
 run lf

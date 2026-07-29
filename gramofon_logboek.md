@@ -45,8 +45,8 @@ mtd5: 00010000 00010000 "art"          (WiFi kalibratie — NOOIT overschrijven)
 Activeren: knop ingedrukt houden bij opstarten, loslaten zodra LED rood knippert.
 
 - Ethernetkabel in de **Computer-poort** van de Gramofon
-- Statisch IP op desktop: `192.168.10.111 / 255.255.255.0`
-- Bereikbaar op: `http://192.168.10.1`
+- Statisch IP op desktop: `192.168.2.11 / 255.255.255.0`
+- Bereikbaar op: `http://192.168.2.1`
 - Toont een firmware-uploadknop (Choose File + Submit)
 - Geen andere poorten open (nmap bevestigd: alleen poort 80)
 
@@ -103,8 +103,8 @@ printenv       — omgevingsvariabelen tonen
 bootcmd=bootm 0x9f020000
 bootdelay=1
 baudrate=115200
-ipaddr=192.168.10.1
-serverip=192.168.10.100
+ipaddr=192.168.2.1
+serverip=192.168.2.10
 lf=tftp 0x80060000 fon2415.image; erase 0x9f020000 +$filesize; cp.b $fileaddr 0x9f020000 $filesize
 lu=tftp 0x80060000 fon2415.uboot; erase 0x9f000000 +$filesize; cp.b $fileaddr 0x9f000000 $filesize
 ```
@@ -112,9 +112,9 @@ lu=tftp 0x80060000 fon2415.uboot; erase 0x9f000000 +$filesize; cp.b $fileaddr 0x
 **Netwerk instellen in U-Boot (werkend):**
 
 ```
-setenv ipaddr 192.168.178.200
-setenv serverip 192.168.178.131
-ping 192.168.178.131
+setenv ipaddr 192.168.1.200
+setenv serverip 192.168.1.10
+ping 192.168.1.10
 ```
 
 Netwerk werkt via **eth1** (niet eth0). Ping naar desktop succesvol bevestigd.
@@ -190,7 +190,7 @@ Een bericht is geplaatst op het OpenWrt-forum (forum.openwrt.org) met de volledi
 - Werkdirectory: `/home/krijn/openai/Gramofon`.
 - OpenWrt buildtree: `/home/krijn/openai/Gramofon/openwrt`.
 - Device draait OpenWrt `24.10.6`, kernel `6.6.127`.
-- SSH: `root@192.168.178.115`.
+- SSH: `root@192.168.1.50`.
 - Seriele console: detached screen-sessie `screen -r gramofon` op `/dev/ttyUSB0 115200`.
 - Volgende sessie opnieuw verbinden via zowel `screen -r gramofon` als SSH.
 - Belangrijk: voor elke `aplay`-test eerst de gebruiker waarschuwen zodat de koptelefoon opgezet kan worden.
@@ -236,8 +236,8 @@ make package/ath79-audio/compile V=s
 Geinstalleerd op device en gereboot:
 
 ```bash
-scp bin/targets/ath79/generic/packages/kmod-ath79-audio_6.6.127-r1_mips_24kc.ipk root@192.168.178.115:/tmp/
-ssh root@192.168.178.115 "opkg install --force-reinstall /tmp/kmod-ath79-audio_6.6.127-r1_mips_24kc.ipk && reboot"
+scp bin/targets/ath79/generic/packages/kmod-ath79-audio_6.6.127-r1_mips_24kc.ipk root@192.168.1.50:/tmp/
+ssh root@192.168.1.50 "opkg install --force-reinstall /tmp/kmod-ath79-audio_6.6.127-r1_mips_24kc.ipk && reboot"
 ```
 
 Na reboot kwam SSH terug. Modulelog:
@@ -254,13 +254,13 @@ ath79-i2s 180b0000.i2s: AR9341 I2S ready (MCLK=GPIO22 BICK=GPIO21 LRCK=GPIO20 SD
 Na reboot moest de test-WAV opnieuw naar `/tmp` gekopieerd worden:
 
 ```bash
-scp /tmp/gramofon-stereo-test.wav root@192.168.178.115:/tmp/gramofon-stereo-test.wav
+scp /tmp/gramofon-stereo-test.wav root@192.168.1.50:/tmp/gramofon-stereo-test.wav
 ```
 
 Laatste testcommando:
 
 ```bash
-ssh root@192.168.178.115 "dmesg -c >/tmp/dmesg-before-audio4.log; aplay -v -D hw:0,0 -f S16_LE -c 2 -r 44100 /tmp/gramofon-stereo-test.wav; rc=\$?; echo APLAY_RC=\$rc; dmesg | grep -E 'ath79-i2s|INT_ENABLE|trigger START|post-start|mbox dump|writeprobe|audio PLL|DPLL|RESET_MODULE'; exit \$rc"
+ssh root@192.168.1.50 "dmesg -c >/tmp/dmesg-before-audio4.log; aplay -v -D hw:0,0 -f S16_LE -c 2 -r 44100 /tmp/gramofon-stereo-test.wav; rc=\$?; echo APLAY_RC=\$rc; dmesg | grep -E 'ath79-i2s|INT_ENABLE|trigger START|post-start|mbox dump|writeprobe|audio PLL|DPLL|RESET_MODULE'; exit \$rc"
 ```
 
 Resultaat: nog geen audio; `aplay` faalt met I/O error.
@@ -306,7 +306,7 @@ Waarschijnlijk is er nog een reset/enable/clock-gate voor MBOX DMA actief. Verda
 ### Volgende stappen
 
 1. Verbind opnieuw met seriele console: `screen -r gramofon`.
-2. Controleer SSH: `ssh root@192.168.178.115`.
+2. Controleer SSH: `ssh root@192.168.1.50`.
 3. Inspecteer reset/clock/MBOX gating voordat opnieuw audio gestart wordt.
 4. Onderzoek specifiek MBOX offset `0x0c`, resetregister `0x1806001c`, en eventuele HOST_DMA enable/reset bits.
 5. Patch minimaal zodat START op RX control blijft hangen of verklaar waarom register `0x1c` write-only/auto-clear is.
@@ -858,7 +858,7 @@ te zwaar voor de 560 MHz MIPS → continue underruns ("hapert").
 
 ### Werkend gekregen (details voor herhaling)
 - **Firewall (WEL persistent, tgz-md5 0e5eef92)**: thuisnet
-  192.168.178.x hangt aan eth1 = wan-zone met input REJECT! uci-regels
+  192.168.1.x hangt aan eth1 = wan-zone met input REJECT! uci-regels
   "Allow-SSDP" (udp 1900) en "Allow-UPnP-Renderer" (tcp/udp
   49100-49200) toegevoegd, gecommit, via `sh /etc/rc.local` geborgd.
 - **upmpdcli weigert als root**: gebruiker/groep `upmpdcli` (uid/gid
