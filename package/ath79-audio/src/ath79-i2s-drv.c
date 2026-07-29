@@ -1002,16 +1002,6 @@ static int ath79_i2s_probe(struct platform_device *pdev)
 				   &adev->gpio_sdto);
 	if (ret) { dev_err(dev, "missing qca,i2s-sdto-gpio\n"); return ret; }
 
-	/* Gramofon FON2515A02: de DTS bevat nog de CUS227-pinnen (22/21/20/18),
-	 * maar de echte routing is multimeter-bewezen (2026-07-08):
-	 * MCLK=GPIO14 -> DAC-pin 4, BICK=GPIO13 -> pin 5,
-	 * LRCK=GPIO12 -> pin 7, SDTO=GPIO15 -> pin 6.
-	 * TODO: qca9341_fon_fon2415.dts aanpassen en deze override weghalen. */
-	adev->gpio_mclk = 14;
-	adev->gpio_bick = 13;
-	adev->gpio_lrck = 12;
-	adev->gpio_sdto = 15;
-
 	/* Reset I2S and MBOX controllers via the reset framework */
 	rst_i2s = devm_reset_control_get_exclusive(dev, "i2s");
 	if (!IS_ERR(rst_i2s))
